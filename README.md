@@ -1,12 +1,29 @@
-# Cursor Wrap
+# Cursor Wrap: mouse wrap-around for GNOME on Wayland
 
-A GNOME Shell extension that wraps the mouse pointer around the outer edges of
-your monitor layout. Push the cursor off the far-left edge and it reappears on
-the far-right edge (and vice versa). Optional vertical wrapping too.
+**Cursor Wrap** is a GNOME Shell extension that wraps the mouse pointer around
+the edges of your screen. Move the cursor off the left edge of your leftmost
+monitor and it appears at the right edge of your rightmost monitor, and the
+other way round. Top-to-bottom wrapping is optional.
 
-It works **natively on Wayland**. Classic tools like `encircle` rely on
-`XWarpPointer`, which Wayland blocks for security; this extension runs inside
-GNOME Shell (the compositor), which is allowed to move the pointer.
+It works on **Wayland**, where X11 tools such as `encircle` or `xdotool`
+cannot move the pointer, and supports single-monitor, multi-monitor, and
+ultrawide setups on Ubuntu, Fedora, Debian, Arch Linux, and other
+distributions with GNOME 48 to 51. If you know PowerToys CursorWrap on
+Windows, this is the same idea for the GNOME desktop on Linux.
+
+**[Download the latest release](https://github.com/friscic/gnome-cursor-wrap/releases/latest/download/cursor-wrap@friscic.github.io.shell-extension.zip)**
+· [Install instructions](#install) · [FAQ](#faq)
+
+## Why use it
+
+- **Less mouse travel on wide setups.** With two or three monitors or an
+  ultrawide screen, getting from the far left to the far right is one short
+  flick instead of a long drag.
+- **Works on modern GNOME.** Ubuntu and Fedora now run GNOME on Wayland only,
+  and the classic X11 pointer-wrapping tools stopped working there. Cursor
+  Wrap runs inside GNOME Shell, which is allowed to move the pointer.
+- **Stays out of the way.** Edges between monitors work as before, and the
+  pointer never wraps while you drag something.
 
 ## Features
 
@@ -25,9 +42,16 @@ GNOME Shell (the compositor), which is allowed to move the pointer.
 
 ## Requirements
 
-- GNOME Shell 48, 49, 50, or 51.
+- GNOME Shell 48, 49, 50, or 51. Check yours with `gnome-shell --version`.
 - A Wayland session. X11 sessions (only GNOME 48 and 49 still have one) are
   supported with a fallback that polls the pointer position every 10 ms.
+
+| GNOME | Distributions (examples) | Tested |
+| --- | --- | --- |
+| 51 | Ubuntu 26.10, Fedora 45, Arch Linux | 51.1 on Fedora 45 |
+| 50 | Ubuntu 26.04 LTS, Fedora 44 | 50.1 on Ubuntu 26.04 |
+| 49 | Fedora 43 | not yet |
+| 48 | Debian 13 (trixie) | 48.7 on Debian 13, Wayland and X11 |
 
 ## Install
 
@@ -73,6 +97,47 @@ gnome-extensions prefs cursor-wrap@friscic.github.io
 There are two switches: **Wrap horizontally** (on by default) and **Wrap
 vertically** (off by default). Changes apply immediately.
 
+## FAQ
+
+### How do I make the mouse wrap around the screen edges on Ubuntu or Fedora?
+
+Install this extension (see [Install](#install)), log out and back in, and
+enable it. The pointer then wraps from the left edge to the right edge.
+Turn on **Wrap vertically** in the settings for top and bottom as well.
+
+### Why do encircle, xdotool, or other mouse wrap tools not work on Wayland?
+
+They move the pointer with `XWarpPointer`, an X11 function. On Wayland, apps
+are not allowed to move the pointer, so these tools have no effect. Only the
+compositor can do it, and in GNOME the compositor is GNOME Shell, where this
+extension runs.
+
+### Is this a PowerToys CursorWrap alternative for Linux?
+
+Yes. It provides the same edge wrapping for GNOME: horizontal, vertical, or
+both, and no wrapping while dragging.
+
+### Does it work with a single monitor?
+
+Yes. The pointer wraps from one edge of the screen to the opposite edge.
+
+### Does it work with an ultrawide or monitors of different sizes?
+
+Yes. It reads the live monitor layout, including portrait monitors and
+monitors at different heights. If the opposite side has no monitor at the
+pointer's height, the pointer lands on the nearest point of the monitor on
+that side.
+
+### Why doesn't the pointer wrap while I drag a window?
+
+On purpose. Dragging a window to the left or right edge tiles it, and that
+needs the pointer to stay at the edge. After a drag ends at an edge, move away
+from the edge once and wrapping works again.
+
+### Does it work on KDE Plasma, Xfce, or other desktops?
+
+No. It is a GNOME Shell extension and only runs in GNOME.
+
 ## Known limitations
 
 - Anything you reach by pushing the pointer against a wrapping edge gets
@@ -102,8 +167,10 @@ vertically** (off by default). Changes apply immediately.
   journalctl --user -b -o cat _COMM=gnome-shell | grep -i -A5 cursor-wrap
   ```
 
-When reporting a problem, include the output of `gnome-shell --version`,
-`echo $XDG_SESSION_TYPE`, your monitor arrangement, and any log lines.
+When reporting a problem in
+[Issues](https://github.com/friscic/gnome-cursor-wrap/issues), include the
+output of `gnome-shell --version`, `echo $XDG_SESSION_TYPE`, your monitor
+arrangement, and any log lines.
 
 ## Uninstall
 
