@@ -52,19 +52,8 @@ export default class CursorWrapExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
 
-        // Temporary debug tracing; see logs with:
-        //   journalctl --user -b 0 -f | grep cursor-wrap
-        this._debug = true;
-        this._lastLog = 0;
-
         this._seat = Clutter.get_default_backend().get_default_seat();
         this._lastWrapTime = 0;
-
-        // Log the monitor layout once so we can confirm edge coordinates.
-        if (this._debug) {
-            const rects = this._getMonitorRects();
-            console.log(`[cursor-wrap] enabled; monitors=${JSON.stringify(rects)}`);
-        }
 
         // Poll the pointer via GNOME Shell's PointerWatcher. This is the
         // approach the magnifier/zoom uses: captured stage events do NOT fire
@@ -95,17 +84,8 @@ export default class CursorWrapExtension extends Extension {
         if (now - this._lastWrapTime < WRAP_COOLDOWN_MS)
             return;
 
-        if (this._debug) {
-            if (!this._lastLog || now - this._lastLog > 500) {
-                this._lastLog = now;
-                console.log(`[cursor-wrap] pointer x=${Math.round(x)} y=${Math.round(y)}`);
-            }
-        }
-
         const target = this._computeWrapTarget(x, y);
         if (target) {
-            if (this._debug)
-                console.log(`[cursor-wrap] WRAP (${Math.round(x)},${Math.round(y)}) -> (${Math.round(target.x)},${Math.round(target.y)})`);
             this._lastWrapTime = now;
             this._warpPointer(target.x, target.y);
         }
