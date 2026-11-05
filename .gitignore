@@ -1,0 +1,10 @@
+# Compiled GSettings schema
+schemas/gschemas.compiled
+
+# Packaged extension zip (from `make pack` / gnome-extensions pack)
+*.zip
+*.shell-extension.zip
+
+# Editor / OS cruft
+*.swp
+.DS_Store

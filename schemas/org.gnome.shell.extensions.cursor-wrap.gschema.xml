@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.cursor-wrap"
+          path="/org/gnome/shell/extensions/cursor-wrap/">
+    <key name="wrap-horizontal" type="b">
+      <default>true</default>
+      <summary>Wrap horizontally</summary>
+      <description>
+        Wrap the pointer between the far-left and far-right outer edges of the
+        combined monitor layout.
+      </description>
+    </key>
+    <key name="wrap-vertical" type="b">
+      <default>false</default>
+      <summary>Wrap vertically</summary>
+      <description>
+        Wrap the pointer between the top and bottom outer edges of the combined
+        monitor layout.
+      </description>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,10 @@
+{
+  "uuid": "cursor-wrap@friscic.github.io",
+  "name": "Cursor Wrap",
+  "description": "Wraps the mouse pointer around the outer edges of your monitor layout: move off the far-left edge and the cursor reappears at the far-right edge, and vice versa. Works natively on Wayland (and X11) by warping the pointer through the compositor. Multi-monitor aware.",
+  "shell-version": ["48", "49", "50"],
+  "url": "https://github.com/friscic/gnome-cursor-wrap",
+  "settings-schema": "org.gnome.shell.extensions.cursor-wrap",
+  "gettext-domain": "cursor-wrap",
+  "version": 1
+}
