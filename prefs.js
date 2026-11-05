@@ -1,7 +1,4 @@
-/*
- * Preferences window for Cursor Wrap.
- * Two toggles: horizontal (left<->right) and vertical (top<->bottom) wrapping.
- */
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
@@ -37,12 +34,11 @@ export default class CursorWrapPrefs extends ExtensionPreferences {
         });
         group.add(vertical);
 
-        // Bind both switches to GSettings (DEFAULT bind flags = 0).
         settings.bind('wrap-horizontal', horizontal, 'active',
             Gio.SettingsBindFlags.DEFAULT);
         settings.bind('wrap-vertical', vertical, 'active',
             Gio.SettingsBindFlags.DEFAULT);
 
-        window.set_default_size(480, 260);
+        window.set_default_size(480, 300);
     }
 }

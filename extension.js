@@ -1,235 +1,304 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /*
- * Cursor Wrap — GNOME Shell extension
+ * Cursor Wrap: moves the pointer to the opposite outer edge of the monitor
+ * layout when it reaches the far left/right (and optionally top/bottom) edge.
  *
- * Wraps the mouse pointer around the outer edges of the combined monitor
- * layout. When the pointer reaches the far-left edge of the leftmost monitor
- * it is warped to the far-right edge of the rightmost monitor (and vice
- * versa); likewise for the top/bottom outer edges when enabled.
- *
- * Why this exists: classic X11 tools (e.g. encircle) warp the pointer with
- * XWarpPointer, which Wayland forbids for security. Inside GNOME Shell we run
- * as part of the compositor, so we may move the pointer through Meta/Clutter
- * APIs. That is the Wayland-legal path this extension uses.
- *
- * Design notes:
- *  - We read the live monitor geometry from Meta every time we need it, so the
- *    extension keeps working when displays are rearranged, added, or removed.
- *  - Edge detection is cheap and only acts when the pointer is within a 1px
- *    band of an OUTER edge of the union of all monitors. Interior edges
- *    between adjacent monitors are never touched, so normal monitor-to-monitor
- *    movement is unaffected.
- *  - After warping we set a short cooldown so the pointer landing near the
- *    opposite edge cannot immediately re-trigger a wrap back.
+ * GNOME Shell is the Wayland compositor, so it may warp the pointer with
+ * Clutter.Seat.warp_pointer(); a regular Wayland client cannot.
  */
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
+import Meta from 'gi://Meta';
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
-import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-// Pixels inside the outer edge at which a wrap triggers. 1px is enough because
-// the compositor clamps the pointer to the edge; a tiny band avoids missing
-// fast flicks.
-const EDGE_THRESHOLD = 2;
+// Width in pixels of the band along an outer edge that triggers a wrap. The
+// compositor clamps the pointer to the outermost pixel when it is pushed
+// against the edge, so one pixel is enough.
+const EDGE_ZONE = 1;
 
-// Where to place the pointer after wrapping, measured inward from the opposite
-// outer edge, so it lands clearly on-screen rather than exactly on the border
-// (which could immediately re-detect).
+// Distance in pixels from the destination monitor's edges where the pointer
+// lands. It must be larger than EDGE_ZONE so the landing spot can never
+// trigger another wrap.
 const LANDING_INSET = 3;
 
-// Minimum time between wraps (ms): prevents a just-warped pointer from
-// bouncing straight back when the user keeps pushing in the same direction.
-const WRAP_COOLDOWN_MS = 150;
+// Polling interval for X11 sessions (GNOME 48/49 only), where the cursor
+// tracker does not report pointer motion to extensions.
+const X11_POLL_INTERVAL_MS = 10;
 
-// Pointer sampling interval (ms). GNOME Shell's PointerWatcher polls
-// global.get_pointer() rather than relying on captured stage events (which do
-// not fire for free pointer motion over windows). 10ms (~100Hz) is responsive
-// enough to catch the pointer pinned at an edge without measurable cost.
-const POLL_INTERVAL_MS = 10;
+const BUTTONS_MASK =
+    Clutter.ModifierType.BUTTON1_MASK |
+    Clutter.ModifierType.BUTTON2_MASK |
+    Clutter.ModifierType.BUTTON3_MASK |
+    Clutter.ModifierType.BUTTON4_MASK |
+    Clutter.ModifierType.BUTTON5_MASK;
+
+function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}
+
+// Distance from value to the closest point of the range [start, end].
+function distanceToRange(value, start, end) {
+    return Math.max(start - value, 0, value - end);
+}
+
+function findClosest(monitors, distanceOf) {
+    let closest = null;
+    let closestDistance = Infinity;
+    for (const monitor of monitors) {
+        const distance = distanceOf(monitor);
+        if (distance < closestDistance) {
+            closest = monitor;
+            closestDistance = distance;
+        }
+    }
+    return closest;
+}
+
+function containsPoint(monitor, x, y) {
+    return x >= monitor.x && x < monitor.x + monitor.width &&
+        y >= monitor.y && y < monitor.y + monitor.height;
+}
+
+// Returns the integer in [min, max] closest to preferred that is outside all
+// blocked [start, end] ranges, or null if there is none.
+function findClearValue(preferred, min, max, blockedRanges) {
+    const isClear = value => value >= min && value <= max &&
+        !blockedRanges.some(([start, end]) => value >= start && value <= end);
+    const candidates = [
+        clamp(Math.round(preferred), min, max), min, max,
+        ...blockedRanges.flatMap(([start, end]) => [start - 1, end + 1]),
+    ];
+
+    let best = null;
+    for (const value of candidates.filter(isClear)) {
+        if (best === null || Math.abs(value - preferred) < Math.abs(best - preferred))
+            best = value;
+    }
+    return best;
+}
+
+function insetInto(monitor, x, y) {
+    return {
+        monitor,
+        x: clamp(x, monitor.x + LANDING_INSET,
+            monitor.x + monitor.width - 1 - LANDING_INSET),
+        y: clamp(y, monitor.y + LANDING_INSET,
+            monitor.y + monitor.height - 1 - LANDING_INSET),
+    };
+}
 
 export default class CursorWrapExtension extends Extension {
     enable() {
+        this._cursorTracker = global.backend.get_cursor_tracker();
+        this._seat = global.stage.get_context().get_backend().get_default_seat();
+        this._isX11 = Meta.is_wayland_compositor?.() === false;
+        this._armed = true;
+
+        Main.layoutManager.connectObject('monitors-changed',
+            () => this._updateMonitors(), this);
+        this._updateMonitors();
+
         this._settings = this.getSettings();
-
-        this._seat = Clutter.get_default_backend().get_default_seat();
-        this._lastWrapTime = 0;
-
-        // Poll the pointer via GNOME Shell's PointerWatcher. This is the
-        // approach the magnifier/zoom uses: captured stage events do NOT fire
-        // for free pointer motion over windows, so an event hook silently sees
-        // nothing. Polling global.get_pointer() always reflects the real
-        // position regardless of what is under the cursor.
-        this._pointerWatcher = PointerWatcher.getPointerWatcher();
-        this._watch = this._pointerWatcher.addWatch(
-            POLL_INTERVAL_MS,
-            this._onPointerMoved.bind(this)
-        );
+        this._settings.connectObject('changed',
+            () => this._updateSettings(), this);
+        this._updateSettings();
     }
 
     disable() {
-        if (this._watch && this._pointerWatcher) {
-            // The watch is removed through the watcher, matching how GNOME
-            // Shell's own consumers (e.g. ubuntu-dock) tear theirs down.
-            this._pointerWatcher._removeWatch(this._watch);
-        }
-        this._watch = null;
-        this._pointerWatcher = null;
-        this._seat = null;
+        this._stopTracking();
+
+        Main.layoutManager.disconnectObject(this);
+        this._settings.disconnectObject(this);
+
         this._settings = null;
+        this._cursorTracker = null;
+        this._seat = null;
+        this._monitors = null;
+        this._bounds = null;
     }
 
-    _onPointerMoved(x, y) {
-        const now = GLib.get_monotonic_time() / 1000; // us -> ms
-        if (now - this._lastWrapTime < WRAP_COOLDOWN_MS)
+    _updateSettings() {
+        this._wrapHorizontal = this._settings.get_boolean('wrap-horizontal');
+        this._wrapVertical = this._settings.get_boolean('wrap-vertical');
+
+        if (this._wrapHorizontal || this._wrapVertical)
+            this._startTracking();
+        else
+            this._stopTracking();
+    }
+
+    _updateMonitors() {
+        this._monitors = Main.layoutManager.monitors.map(
+            ({ x, y, width, height }) => ({ x, y, width, height }));
+
+        if (this._monitors.length === 0) {
+            this._bounds = null;
+            return;
+        }
+
+        // Bounding box of the whole layout. right and bottom are exclusive.
+        this._bounds = {
+            left: Math.min(...this._monitors.map(m => m.x)),
+            top: Math.min(...this._monitors.map(m => m.y)),
+            right: Math.max(...this._monitors.map(m => m.x + m.width)),
+            bottom: Math.max(...this._monitors.map(m => m.y + m.height)),
+        };
+    }
+
+    _startTracking() {
+        if (this._tracking)
+            return;
+        this._tracking = true;
+
+        if (this._isX11) {
+            this._pollId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
+                X11_POLL_INTERVAL_MS, () => {
+                    this._checkPointer();
+                    return GLib.SOURCE_CONTINUE;
+                });
+        } else {
+            this._cursorTracker.connectObject('position-invalidated',
+                () => this._queueCheck(), this);
+        }
+    }
+
+    _stopTracking() {
+        if (!this._tracking)
+            return;
+        this._tracking = false;
+
+        this._cursorTracker.disconnectObject(this);
+
+        if (this._pollId) {
+            GLib.source_remove(this._pollId);
+            this._pollId = 0;
+        }
+
+        if (this._laterId) {
+            global.compositor.get_laters().remove(this._laterId);
+            this._laterId = 0;
+        }
+    }
+
+    // position-invalidated fires for every motion event (up to 1000 times a
+    // second with some mice), so check at most once per frame.
+    _queueCheck() {
+        if (this._laterId)
             return;
 
-        const target = this._computeWrapTarget(x, y);
-        if (target) {
-            this._lastWrapTime = now;
-            this._warpPointer(target.x, target.y);
+        this._laterId = global.compositor.get_laters().add(
+            Meta.LaterType.BEFORE_REDRAW, () => {
+                this._laterId = 0;
+                this._checkPointer();
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    _checkPointer() {
+        const [coords, mods] = this._cursorTracker.get_pointer();
+        const target = this._getWrapTarget(coords.x, coords.y);
+
+        // Wrap only once per visit to an edge. This prevents repeated warps
+        // when the warp is blocked (e.g. by a game confining the pointer) or
+        // when the pointer is still reported at the old edge after a warp.
+        if (!target) {
+            this._armed = true;
+            return;
+        }
+
+        // Never wrap while a button is held: dragging a window to an edge to
+        // tile it, drag and drop, or selecting text must keep working. The
+        // pointer has to leave the edge after the drag before it wraps.
+        if (mods & BUTTONS_MASK) {
+            this._armed = false;
+            return;
+        }
+
+        if (!this._armed)
+            return;
+
+        this._armed = false;
+        this._warp(coords.x, coords.y, target);
+    }
+
+    _warp(fromX, fromY, target) {
+        let last = { x: Math.round(fromX), y: Math.round(fromY) };
+        for (const point of this._getWarpPath(fromX, fromY, target)) {
+            const x = Math.round(point.x);
+            const y = Math.round(point.y);
+            if (x !== last.x || y !== last.y)
+                this._seat.warp_pointer(x, y);
+            last = { x, y };
         }
     }
 
-    /*
-     * Given the current pointer position, return {x, y} to warp to if the
-     * pointer is sitting on an OUTER edge of the monitor union, else null.
-     *
-     * The union bounding box is computed from all monitors. We only wrap on an
-     * edge that is the extreme edge of the whole layout (e.g. the left side of
-     * the leftmost monitor), never on a seam between two monitors.
-     */
-    _computeWrapTarget(x, y) {
-        const wrapHorizontal = this._settings.get_boolean('wrap-horizontal');
-        const wrapVertical = this._settings.get_boolean('wrap-vertical');
+    // Mutter applies pointer barriers to warps. A one-way barrier stops any
+    // motion that crosses it unless every direction component of the motion
+    // is allowed, so a diagonal warp stops at GNOME Shell's hot corner and top
+    // bar barriers. Vertical barriers only exist within the top bar's height
+    // of a monitor's top edge, and horizontal ones only on that edge. So move
+    // vertically within the source monitor to a row clear of those bands,
+    // horizontally along that row, then vertically within the destination.
+    _getWarpPath(fromX, fromY, target) {
+        const source = this._monitors.find(m => containsPoint(m, fromX, fromY));
+        const destination = target.monitor;
+        if (!source)
+            return [target];
 
-        const monitors = this._getMonitorRects();
-        if (monitors.length === 0)
+        const band = Main.layoutManager.panelBox.height + 1;
+        const row = findClearValue(fromY,
+            Math.max(source.y, destination.y) + LANDING_INSET,
+            Math.min(source.y + source.height, destination.y + destination.height) - 1 - LANDING_INSET,
+            this._monitors.map(m => [m.y - 1, m.y + band]));
+        if (row === null)
+            return [target];
+
+        return [{ x: fromX, y: row }, { x: target.x, y: row }, target];
+    }
+
+    // Returns the point to warp to when (x, y) is on an outer edge of the
+    // layout, or null otherwise. Seams between adjacent monitors never wrap.
+    _getWrapTarget(x, y) {
+        const bounds = this._bounds;
+        if (!bounds)
             return null;
 
-        // Union bounding box of all monitors (in global/stage coordinates).
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (const m of monitors) {
-            minX = Math.min(minX, m.x);
-            minY = Math.min(minY, m.y);
-            maxX = Math.max(maxX, m.x + m.width);
-            maxY = Math.max(maxY, m.y + m.height);
+        if (this._wrapHorizontal) {
+            if (x < bounds.left + EDGE_ZONE)
+                return this._landInColumn(bounds.right - 1 - LANDING_INSET, y);
+            if (x >= bounds.right - EDGE_ZONE)
+                return this._landInColumn(bounds.left + LANDING_INSET, y);
         }
 
-        // Horizontal wrap: left outer edge <-> right outer edge.
-        if (wrapHorizontal) {
-            if (x <= minX + EDGE_THRESHOLD) {
-                // At far-left: jump to far-right, keeping y clamped onto a real
-                // monitor at the destination column.
-                const destX = maxX - LANDING_INSET;
-                return { x: destX, y: this._clampYToMonitorAt(destX, y, monitors) };
-            }
-            if (x >= maxX - EDGE_THRESHOLD - 1) {
-                const destX = minX + LANDING_INSET;
-                return { x: destX, y: this._clampYToMonitorAt(destX, y, monitors) };
-            }
-        }
-
-        // Vertical wrap: top outer edge <-> bottom outer edge.
-        if (wrapVertical) {
-            if (y <= minY + EDGE_THRESHOLD) {
-                const destY = maxY - LANDING_INSET;
-                return { x: this._clampXToMonitorAt(destY, x, monitors), y: destY };
-            }
-            if (y >= maxY - EDGE_THRESHOLD - 1) {
-                const destY = minY + LANDING_INSET;
-                return { x: this._clampXToMonitorAt(destY, x, monitors), y: destY };
-            }
+        if (this._wrapVertical) {
+            if (y < bounds.top + EDGE_ZONE)
+                return this._landInRow(bounds.bottom - 1 - LANDING_INSET, x);
+            if (y >= bounds.bottom - EDGE_ZONE)
+                return this._landInRow(bounds.top + LANDING_INSET, x);
         }
 
         return null;
     }
 
-    /*
-     * When wrapping horizontally, the destination column (destX) may cross
-     * monitors whose vertical extent differs from where the pointer currently
-     * is. Clamp y so it lands inside a monitor that actually covers destX,
-     * picking the monitor whose vertical range is closest to the current y.
-     */
-    _clampYToMonitorAt(destX, y, monitors) {
-        const covering = monitors.filter(
-            m => destX >= m.x && destX < m.x + m.width
-        );
-        if (covering.length === 0)
-            return y;
-
-        // Prefer a monitor that already contains y; otherwise clamp into the
-        // nearest one vertically.
-        for (const m of covering) {
-            if (y >= m.y && y < m.y + m.height)
-                return y;
-        }
-        // Clamp into the covering monitor whose range is nearest to y.
-        let best = covering[0];
-        let bestDist = Infinity;
-        for (const m of covering) {
-            const cy = Math.max(m.y, Math.min(y, m.y + m.height - 1));
-            const d = Math.abs(cy - y);
-            if (d < bestDist) {
-                bestDist = d;
-                best = m;
-            }
-        }
-        return Math.max(best.y + 1, Math.min(y, best.y + best.height - 2));
+    // Monitors in the destination column can have different vertical offsets
+    // than the one the pointer leaves (e.g. an ultrawide next to a 1080p
+    // screen). Keep y if a monitor in that column covers it, otherwise move it
+    // onto the closest one.
+    _landInColumn(x, y) {
+        const monitor = findClosest(
+            this._monitors.filter(m => x >= m.x && x < m.x + m.width),
+            m => distanceToRange(y, m.y, m.y + m.height - 1));
+        return monitor ? insetInto(monitor, x, y) : null;
     }
 
-    // Mirror of _clampYToMonitorAt for vertical wraps.
-    _clampXToMonitorAt(destY, x, monitors) {
-        const covering = monitors.filter(
-            m => destY >= m.y && destY < m.y + m.height
-        );
-        if (covering.length === 0)
-            return x;
-
-        for (const m of covering) {
-            if (x >= m.x && x < m.x + m.width)
-                return x;
-        }
-        let best = covering[0];
-        let bestDist = Infinity;
-        for (const m of covering) {
-            const cx = Math.max(m.x, Math.min(x, m.x + m.width - 1));
-            const d = Math.abs(cx - x);
-            if (d < bestDist) {
-                bestDist = d;
-                best = m;
-            }
-        }
-        return Math.max(best.x + 1, Math.min(x, best.x + best.width - 2));
-    }
-
-    /*
-     * Read current monitor rectangles from Meta in global coordinates.
-     * Using the display's monitor geometry keeps us correct across hotplug and
-     * rearrangement without any hardcoded layout.
-     */
-    _getMonitorRects() {
-        const display = global.display;
-        const n = display.get_n_monitors();
-        const rects = [];
-        for (let i = 0; i < n; i++) {
-            const r = display.get_monitor_geometry(i);
-            rects.push({ x: r.x, y: r.y, width: r.width, height: r.height });
-        }
-        return rects;
-    }
-
-    // Warp the pointer. Clutter.Seat exposes warp_pointer (clutter_seat_warp_
-    // pointer in mutter-18), which the compositor is allowed to call on Wayland.
-    _warpPointer(x, y) {
-        const ix = Math.round(x);
-        const iy = Math.round(y);
-        if (this._seat && this._seat.warp_pointer) {
-            this._seat.warp_pointer(ix, iy);
-        } else {
-            // Fallback for older API: Clutter global backend seat.
-            const seat = Clutter.get_default_backend().get_default_seat();
-            seat.warp_pointer(ix, iy);
-        }
+    _landInRow(y, x) {
+        const monitor = findClosest(
+            this._monitors.filter(m => y >= m.y && y < m.y + m.height),
+            m => distanceToRange(x, m.x, m.x + m.width - 1));
+        return monitor ? insetInto(monitor, x, y) : null;
     }
 }
