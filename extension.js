@@ -26,6 +26,7 @@ import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 
 // Pixels inside the outer edge at which a wrap triggers. 1px is enough because
 // the compositor clamps the pointer to the edge; a tiny band avoids missing
@@ -41,49 +42,73 @@ const LANDING_INSET = 3;
 // bouncing straight back when the user keeps pushing in the same direction.
 const WRAP_COOLDOWN_MS = 150;
 
+// Pointer sampling interval (ms). GNOME Shell's PointerWatcher polls
+// global.get_pointer() rather than relying on captured stage events (which do
+// not fire for free pointer motion over windows). 10ms (~100Hz) is responsive
+// enough to catch the pointer pinned at an edge without measurable cost.
+const POLL_INTERVAL_MS = 10;
+
 export default class CursorWrapExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
 
-        this._seat = Clutter.get_default_backend().get_default_seat();
+        // Temporary debug tracing; see logs with:
+        //   journalctl --user -b 0 -f | grep cursor-wrap
+        this._debug = true;
+        this._lastLog = 0;
 
-        // A transparent, reactive full-stage actor would be one way to sample
-        // motion, but the robust approach is to hook the global stage's
-        // captured motion events, which fire for all pointer movement.
+        this._seat = Clutter.get_default_backend().get_default_seat();
         this._lastWrapTime = 0;
 
-        this._motionId = global.stage.connect(
-            'captured-event',
-            this._onCapturedEvent.bind(this)
+        // Log the monitor layout once so we can confirm edge coordinates.
+        if (this._debug) {
+            const rects = this._getMonitorRects();
+            console.log(`[cursor-wrap] enabled; monitors=${JSON.stringify(rects)}`);
+        }
+
+        // Poll the pointer via GNOME Shell's PointerWatcher. This is the
+        // approach the magnifier/zoom uses: captured stage events do NOT fire
+        // for free pointer motion over windows, so an event hook silently sees
+        // nothing. Polling global.get_pointer() always reflects the real
+        // position regardless of what is under the cursor.
+        this._pointerWatcher = PointerWatcher.getPointerWatcher();
+        this._watch = this._pointerWatcher.addWatch(
+            POLL_INTERVAL_MS,
+            this._onPointerMoved.bind(this)
         );
     }
 
     disable() {
-        if (this._motionId) {
-            global.stage.disconnect(this._motionId);
-            this._motionId = 0;
+        if (this._watch && this._pointerWatcher) {
+            // The watch is removed through the watcher, matching how GNOME
+            // Shell's own consumers (e.g. ubuntu-dock) tear theirs down.
+            this._pointerWatcher._removeWatch(this._watch);
         }
+        this._watch = null;
+        this._pointerWatcher = null;
         this._seat = null;
         this._settings = null;
     }
 
-    _onCapturedEvent(_actor, event) {
-        if (event.type() !== Clutter.EventType.MOTION)
-            return Clutter.EVENT_PROPAGATE;
-
+    _onPointerMoved(x, y) {
         const now = GLib.get_monotonic_time() / 1000; // us -> ms
         if (now - this._lastWrapTime < WRAP_COOLDOWN_MS)
-            return Clutter.EVENT_PROPAGATE;
+            return;
 
-        const [x, y] = event.get_coords();
-        const target = this._computeWrapTarget(x, y);
-        if (target) {
-            this._lastWrapTime = now;
-            this._warpPointer(target.x, target.y);
-            // Let the motion event continue; the warp repositions the pointer.
+        if (this._debug) {
+            if (!this._lastLog || now - this._lastLog > 500) {
+                this._lastLog = now;
+                console.log(`[cursor-wrap] pointer x=${Math.round(x)} y=${Math.round(y)}`);
+            }
         }
 
-        return Clutter.EVENT_PROPAGATE;
+        const target = this._computeWrapTarget(x, y);
+        if (target) {
+            if (this._debug)
+                console.log(`[cursor-wrap] WRAP (${Math.round(x)},${Math.round(y)}) -> (${Math.round(target.x)},${Math.round(target.y)})`);
+            this._lastWrapTime = now;
+            this._warpPointer(target.x, target.y);
+        }
     }
 
     /*
