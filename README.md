@@ -1,5 +1,7 @@
 # Cursor Wrap: mouse wrap-around for GNOME on Wayland
 
+![Pixel-art banner: a penguin at a desk with three monitors; the mouse pointer leaves the left edge of the left monitor and reappears at the right edge of the right monitor](docs/gnome-cursor-wrap.jpeg)
+
 **Cursor Wrap** is a GNOME Shell extension that wraps the mouse pointer around
 the edges of your screen. Move the cursor off the left edge of your leftmost
 monitor and it appears at the right edge of your rightmost monitor, and the
