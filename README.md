@@ -260,16 +260,16 @@ its shell; the helpers are in `tests/lib/harness.js`.
 
 ### Releasing
 
-1. Set `version-name` in `metadata.json` (for example `"3"`) and commit.
+1. Set `version-name` in `metadata.json` (for example `"1.2"`) and commit.
 2. Push a matching tag:
 
    ```bash
-   git tag v3
-   git push origin v3
+   git tag v1.2
+   git push origin v1.2
    ```
 
 CI runs every check. If they pass, it attaches the zip that was tested on
-GNOME 51 to the `v3` GitHub release, creating the release if needed. Upload
+GNOME 51 to the `v1.2` GitHub release, creating the release if needed. Upload
 the same zip to extensions.gnome.org.
 
 ## License
