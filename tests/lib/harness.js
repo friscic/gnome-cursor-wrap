@@ -25,7 +25,7 @@ import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 
 import * as Config from 'resource:///org/gnome/shell/misc/config.js';
-import { ExtensionState } from 'resource:///org/gnome/shell/misc/extensionUtils.js';
+import {ExtensionState} from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 export const UUID = 'cursor-wrap@friscic.github.io';
@@ -62,7 +62,7 @@ export async function waitFor(condition, timeoutMs = TIMEOUT_MS) {
 
 function getPointer() {
     const [x, y, mods] = global.get_pointer();
-    return { x, y, mods };
+    return {x, y, mods};
 }
 
 function nextFrame() {
@@ -150,7 +150,7 @@ class TestContext {
 
     // Waits until the pointer is at (x, y). With stays, it must then remain
     // there for that many milliseconds (catches unwanted wraps and bounces).
-    async expectPointer(name, x, y, { stays = 0 } = {}) {
+    async expectPointer(name, x, y, {stays = 0} = {}) {
         const isThere = () => {
             const p = getPointer();
             return p.x === x && p.y === y;
@@ -163,7 +163,7 @@ class TestContext {
 
     // The pointer reaches (x, y) and nothing moves it afterwards.
     expectPointerStays(name, x, y) {
-        return this.expectPointer(name, x, y, { stays: SETTLE_MS });
+        return this.expectPointer(name, x, y, {stays: SETTLE_MS});
     }
 
     // Waits until predicate(pointer) is true.
@@ -239,7 +239,7 @@ class TestContext {
     }
 
     async setHotCorners(enabled) {
-        new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' })
+        new Gio.Settings({schema_id: 'org.gnome.desktop.interface'})
             .set_boolean('enable-hot-corners', enabled);
         await sleep(200);
     }
@@ -251,7 +251,7 @@ class TestContext {
         const [serial, monitors] = (await callDisplayConfig('GetCurrentState', null)).recursiveUnpack();
         const used = new Set();
         const hasPrimary = layout.some(m => m.primary);
-        const logicalMonitors = layout.map(({ width, height, x, y, primary }, i) => {
+        const logicalMonitors = layout.map(({width, height, x, y, primary}, i) => {
             const index = monitors.findIndex(([, modes], j) =>
                 !used.has(j) && modes.some(mode => mode[1] === width && mode[2] === height));
             if (index < 0)
@@ -266,7 +266,7 @@ class TestContext {
         await callDisplayConfig('ApplyMonitorsConfig',
             new GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', [serial, 1, logicalMonitors, {}]));
 
-        const wanted = layout.map(({ width, height, x, y }) => ({ x, y, width, height }));
+        const wanted = layout.map(({width, height, x, y}) => ({x, y, width, height}));
         const applied = await waitFor(() => {
             const current = Main.layoutManager.monitors;
             return current.length === wanted.length &&
@@ -286,9 +286,9 @@ async function waitForExtension() {
         return extension?.state === ExtensionState.ACTIVE || !!extension?.error;
     }, 15000);
     const extension = Main.extensionManager.lookup(UUID);
-    if (!active || extension.state !== ExtensionState.ACTIVE) {
+    if (!active || extension.state !== ExtensionState.ACTIVE)
         throw new Error(`extension did not become active (state ${extension?.state}, error: ${extension?.error ?? 'none'})`);
-    }
+
     return extension;
 }
 
@@ -297,7 +297,7 @@ async function waitForExtension() {
 async function createPointer() {
     const seat = global.stage.get_context().get_backend().get_default_seat();
     const device = seat.create_virtual_device(Clutter.InputDeviceType.POINTER_DEVICE);
-    const { x, y, width, height } = Main.layoutManager.primaryMonitor;
+    const {x, y, width, height} = Main.layoutManager.primaryMonitor;
     for (let i = 0; i < 20; i++) {
         const tx = x + Math.floor(width / 2) + i;
         const ty = y + Math.floor(height / 2);
@@ -316,7 +316,7 @@ function writeResult(result) {
 }
 
 async function runTest(body) {
-    const result = { gnome: Config.PACKAGE_VERSION, passed: 0, failed: [], error: null };
+    const result = {gnome: Config.PACKAGE_VERSION, passed: 0, failed: [], error: null};
     try {
         const extension = await waitForExtension();
         Main.overview.hide();

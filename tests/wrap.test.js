@@ -4,14 +4,14 @@
 // Core wrapping behaviour on two monitors (A 1920x1080, B 1280x1024).
 // Landing spots are 3 px inside the destination monitor (LANDING_INSET).
 
-import { defineTest } from './lib/harness.js';
+import {defineTest} from './lib/harness.js';
 
-const A = { width: 1920, height: 1080 };
-const B = { width: 1280, height: 1024 };
+const A = {width: 1920, height: 1080};
+const B = {width: 1280, height: 1024};
 
-export const { init, run } = defineTest(async t => {
+export const {init, run} = defineTest(async t => {
     // A at (0, 0), B to its right at (1920, 0): the layout is 3200 px wide.
-    await t.applyLayout([{ ...A, x: 0, y: 0 }, { ...B, x: 1920, y: 0 }]);
+    await t.applyLayout([{...A, x: 0, y: 0}, {...B, x: 1920, y: 0}]);
 
     await t.moveTo(100, 500);
     t.push(-5000, 0);
@@ -98,7 +98,7 @@ export const { init, run } = defineTest(async t => {
     await t.expectPointerStays('wrapping resumes when re-enabled', 3196, 500);
 
     // B 200 px lower than A.
-    await t.applyLayout([{ ...A, x: 0, y: 0 }, { ...B, x: 1920, y: 200 }]);
+    await t.applyLayout([{...A, x: 0, y: 0}, {...B, x: 1920, y: 200}]);
     await t.moveTo(100, 100);
     t.push(-5000, 0);
     await t.expectPointerStays('offset layout: lands on B within its height', 3196, 203);
@@ -107,13 +107,13 @@ export const { init, run } = defineTest(async t => {
     await t.expectPointerStays('offset layout: lands on A within its height', 3, 1076);
 
     // B to the left of A.
-    await t.applyLayout([{ ...A, x: 1280, y: 0, primary: true }, { ...B, x: 0, y: 0 }]);
+    await t.applyLayout([{...A, x: 1280, y: 0, primary: true}, {...B, x: 0, y: 0}]);
     await t.moveTo(1500, 500);
     t.push(5000, 0);
     await t.expectPointerStays('swapped layout: right edge wraps to the far left', 3, 500);
 
     // One monitor.
-    await t.applyLayout([{ ...A, x: 0, y: 0 }]);
+    await t.applyLayout([{...A, x: 0, y: 0}]);
     await t.moveTo(100, 500);
     t.push(-5000, 0);
     await t.expectPointerStays('single monitor wraps within itself', 1916, 500);

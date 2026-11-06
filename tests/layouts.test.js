@@ -6,27 +6,37 @@
 // into every outer edge at many points and checks that each wrap reaches the
 // spot the extension aimed for, i.e. that no barrier stops it halfway.
 
-import { defineTest } from './lib/harness.js';
+import {defineTest} from './lib/harness.js';
 
-const portrait = { width: 1080, height: 1920 };
-const ultrawide = { width: 3440, height: 1440 };
-const tallPortrait = { width: 1080, height: 2560 };
-const A = { width: 1920, height: 1080 };
-const B = { width: 1280, height: 1024 };
+const portrait = {width: 1080, height: 1920};
+const ultrawide = {width: 3440, height: 1440};
+const tallPortrait = {width: 1080, height: 2560};
+const A = {width: 1920, height: 1080};
+const B = {width: 1280, height: 1024};
 
 const rowLayout = [
-    { ...portrait, x: 0, y: 322 },
-    { ...ultrawide, x: 1080, y: 802, primary: true },
-    { ...tallPortrait, x: 4520, y: 0 },
+    {...portrait, x: 0, y: 322},
+    {...ultrawide, x: 1080, y: 802, primary: true},
+    {...tallPortrait, x: 4520, y: 0},
 ];
+
+// Where a push with this delta ends up along one axis: the first or last
+// pixel of the layout, or unchanged if the push does not move along it.
+function edgeCoordinate(position, delta, start, end) {
+    if (delta < 0)
+        return start;
+    if (delta > 0)
+        return end - 1;
+    return position;
+}
 
 // Pushes into the edge in direction (dx, dy) from (x, y) and checks that the
 // pointer lands where the extension computes it should.
 async function checkWrap(t, name, x, y, dx, dy) {
     await t.moveTo(x, y);
-    const { left, top, right, bottom } = t.instance._bounds;
-    const edgeX = dx < 0 ? left : dx > 0 ? right - 1 : x;
-    const edgeY = dy < 0 ? top : dy > 0 ? bottom - 1 : y;
+    const {left, top, right, bottom} = t.instance._bounds;
+    const edgeX = edgeCoordinate(x, dx, left, right);
+    const edgeY = edgeCoordinate(y, dy, top, bottom);
     const target = t.instance._getWrapTarget(edgeX, edgeY);
     if (!target) {
         t.check(`${name} from (${x}, ${y})`, false, `no wrap target for edge point (${edgeX}, ${edgeY})`);
@@ -37,7 +47,7 @@ async function checkWrap(t, name, x, y, dx, dy) {
 }
 
 async function sweepOuterEdges(t, name, stepX, stepY) {
-    const { left, top, right, bottom } = t.instance._bounds;
+    const {left, top, right, bottom} = t.instance._bounds;
     for (const m of t.instance._monitors) {
         for (let y = m.y + 1; y < m.y + m.height; y += stepY) {
             if (m.x === left)
@@ -54,7 +64,7 @@ async function sweepOuterEdges(t, name, stepX, stepY) {
     }
 }
 
-export const { init, run } = defineTest(async t => {
+export const {init, run} = defineTest(async t => {
     await t.setHotCorners(true);
     await t.applyLayout(rowLayout);
 
@@ -94,9 +104,9 @@ export const { init, run } = defineTest(async t => {
     await t.setSetting('wrap-vertical', true);
     await sweepOuterEdges(t, 'row layout', 400, 37);
 
-    await t.applyLayout([{ ...A, x: 0, y: 500, primary: true }, { ...B, x: 1920, y: 0 }]);
+    await t.applyLayout([{...A, x: 0, y: 500, primary: true}, {...B, x: 1920, y: 0}]);
     await sweepOuterEdges(t, 'B higher', 300, 29);
 
-    await t.applyLayout([{ ...A, x: 0, y: 0, primary: true }, { ...B, x: 1920, y: 200 }]);
+    await t.applyLayout([{...A, x: 0, y: 0, primary: true}, {...B, x: 1920, y: 200}]);
     await sweepOuterEdges(t, 'B lower', 300, 29);
 });

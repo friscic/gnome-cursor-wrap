@@ -1,0 +1,7 @@
+{
+    "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": false,
+    "[json]": {
+        "editor.formatOnSave": false
+    },
+    "files.insertFinalNewline": true
+}
