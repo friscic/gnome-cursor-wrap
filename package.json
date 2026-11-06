@@ -1,0 +1,13 @@
+{
+  "name": "gnome-cursor-wrap",
+  "private": true,
+  "description": "Development tooling for the Cursor Wrap GNOME Shell extension. Not part of the extension zip.",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0"
+  }
+}

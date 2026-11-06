@@ -46,12 +46,12 @@ Windows, this is the same idea for the GNOME desktop on Linux.
 - A Wayland session. X11 sessions (only GNOME 48 and 49 still have one) are
   supported with a fallback that polls the pointer position every 10 ms.
 
-| GNOME | Distributions (examples) | Tested |
+| GNOME | Distributions (examples) | Tested by the [integration tests](#tests) on |
 | --- | --- | --- |
-| 51 | Ubuntu 26.10, Fedora 45, Arch Linux | 51.1 on Fedora 45 |
-| 50 | Ubuntu 26.04 LTS, Fedora 44 | 50.1 on Ubuntu 26.04 |
-| 49 | Fedora 43 | not yet |
-| 48 | Debian 13 (trixie) | 48.7 on Debian 13, Wayland and X11 |
+| 51 | Ubuntu 26.10, Fedora 45, Arch Linux | 51.1, Fedora 45 |
+| 50 | Ubuntu 26.04 LTS, Fedora 44 | 50.1, Ubuntu 26.04 |
+| 49 | Fedora 43 | 49.10, Fedora 43 |
+| 48 | Debian 13 (trixie) | 48.7, Debian 13 (Wayland and X11) |
 
 ## Install
 
@@ -211,6 +211,66 @@ delete the files in this directory, including `.git`.
 contains only `extension.js`, `prefs.js`, `metadata.json`, and the schema.
 That is the file to upload to extensions.gnome.org or attach to a GitHub
 release.
+
+### Lint
+
+```bash
+make lint
+```
+
+This needs Node.js and npm. It installs the ESLint version pinned in
+`package.json` into `node_modules/`.
+
+### Tests
+
+The integration tests in `tests/` install the packed zip into a real GNOME
+Shell that runs headless, with virtual monitors and a virtual mouse. Pointer
+motion goes through Mutter's real input handling: edge clamping, pointer
+barriers, and button state.
+
+```bash
+make test                       # on the GNOME Shell installed on this machine
+make test-container GNOME=51    # in a container with GNOME 48, 49, 50, or 51
+make test-all                   # in containers for all supported versions
+```
+
+`make test` is safe to run while you are logged in: every test file gets its
+own headless shell with a private session bus, runtime directory, and
+settings. The container targets use Docker; set `CONTAINER=podman` to try
+Podman (not tested). Logs, results, a screenshot of the preferences window,
+and the tested zip are written to `test-logs/`.
+
+| Test file | What it covers |
+| --- | --- |
+| `wrap.test.js` | Core behaviour on two monitors: both directions, landing spots, no bounce back, button held, settings, layout changes, disable and enable |
+| `layouts.test.js` | Mixed monitor sizes and offsets, and a push into every outer edge with hot corners on, checking that no barrier stops a wrap |
+| `prefs.test.js` | The preferences window opens without errors |
+| `x11.test.js` | X11 session with the polling fallback; runs only where GNOME Shell has an X11 session (GNOME 48 here) |
+
+A run fails if a check fails, the shell times out, or the extension logs an
+error. Header comments in a test file (`// @monitors`, `// @session`) set up
+its shell; the helpers are in `tests/lib/harness.js`.
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to
+`master`, on pull requests, and on version tags. It runs ESLint and checks
+`metadata.json` and the schema, then runs the integration tests on GNOME 48,
+49, 50, and 51 in parallel. Each run keeps the logs as artifacts.
+
+### Releasing
+
+1. Set `version-name` in `metadata.json` (for example `"3"`) and commit.
+2. Push a matching tag:
+
+   ```bash
+   git tag v3
+   git push origin v3
+   ```
+
+CI runs every check. If they pass, it attaches the zip that was tested on
+GNOME 51 to the `v3` GitHub release, creating the release if needed. Upload
+the same zip to extensions.gnome.org.
 
 ## License
 

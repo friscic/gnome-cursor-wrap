@@ -8,3 +8,7 @@ schemas/gschemas.compiled
 # Editor / OS cruft
 *.swp
 .DS_Store
+
+# Development tooling and test output
+node_modules/
+test-logs/

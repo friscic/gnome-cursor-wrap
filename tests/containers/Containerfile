@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Image for running tests/run.sh against a distribution's GNOME Shell.
+# BASE selects the GNOME version; the Makefile maps versions to images
+# (see gnome_base_* there). Works with docker and podman.
+
+ARG BASE=fedora:45
+FROM ${BASE}
+
+RUN if command -v dnf > /dev/null; then \
+        dnf install -y --setopt=install_weak_deps=False \
+            gnome-shell gnome-extensions-app mesa-dri-drivers mesa-libEGL \
+            dbus-daemon dbus-tools python3-dbusmock glib2 unzip procps-ng && \
+        dnf clean all; \
+    else \
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            gnome-shell libgl1-mesa-dri libegl-mesa0 \
+            dbus-daemon dbus-bin python3-dbusmock libglib2.0-bin unzip procps \
+            xvfb ca-certificates && \
+        if ! [ -e /usr/share/dbus-1/services/org.gnome.Shell.Extensions.service ]; then \
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                gnome-shell-extension-prefs; \
+        fi && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi && \
+    test -e /usr/share/dbus-1/services/org.gnome.Shell.Extensions.service
+
+COPY entrypoint.sh /usr/local/bin/cursor-wrap-test-entrypoint
+ENTRYPOINT ["/usr/local/bin/cursor-wrap-test-entrypoint"]

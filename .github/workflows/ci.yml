@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Validate metadata.json and the GSettings schema
+        run: |
+          python3 -m json.tool metadata.json > /dev/null
+          command -v glib-compile-schemas > /dev/null || {
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-bin
+          }
+          glib-compile-schemas --strict --dry-run schemas/
+
+      - name: Check that the tag matches version-name in metadata.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('metadata.json'))['version-name'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version-name \"$version\" in metadata.json"
+            exit 1
+          fi
+
+  test:
+    name: GNOME ${{ matrix.gnome }}
+    needs: lint
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        gnome: [48, 49, 50, 51]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Run the integration tests in a GNOME ${{ matrix.gnome }} container
+        run: make test-container GNOME=${{ matrix.gnome }}
+
+      - name: Upload logs, results, screenshot and the tested zip
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: test-logs-gnome${{ matrix.gnome }}
+          path: test-logs/gnome${{ matrix.gnome }}/
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # Publish exactly the zip that passed the tests on the newest GNOME.
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: test-logs-gnome51
+          path: tested
+
+      - name: Attach the zip to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          zip=tested/cursor-wrap@friscic.github.io.shell-extension.zip
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$zip" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$zip" \
+              --title "Cursor Wrap ${GITHUB_REF_NAME#v}" --generate-notes
+          fi
