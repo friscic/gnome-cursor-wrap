@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/logo-circle.png" alt="Cursor Wrap logo: a pixel-art food wrap and a mouse pointer inside a circle of wrap-around arrows" width="160">
-</p>
-
 # Cursor Wrap: mouse wrap-around for GNOME on Wayland
 
 ![Pixel-art banner: a penguin at a desk with three monitors; the mouse pointer leaves the left edge of the left monitor and reappears at the right edge of the right monitor](docs/gnome-cursor-wrap.jpeg)
@@ -284,3 +280,7 @@ the same zip to extensions.gnome.org.
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+<p align="center">
+  <img src="docs/logo-circle.png" alt="Cursor Wrap logo: a pixel-art food wrap and a mouse pointer inside a circle of wrap-around arrows" width="96">
+</p>
