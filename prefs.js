@@ -3,7 +3,7 @@
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 
-import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 export default class CursorWrapPrefs extends ExtensionPreferences {
     fillPreferencesWindow(window) {

@@ -12,7 +12,7 @@ import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 
-import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 // Width in pixels of the band along an outer edge that triggers a wrap. The
@@ -95,6 +95,8 @@ export default class CursorWrapExtension extends Extension {
     enable() {
         this._cursorTracker = global.backend.get_cursor_tracker();
         this._seat = global.stage.get_context().get_backend().get_default_seat();
+        // Meta.is_wayland_compositor() only exists up to GNOME 49. GNOME 50
+        // removed X11 sessions, so a missing function means Wayland.
         this._isX11 = Meta.is_wayland_compositor?.() === false;
         this._armed = true;
 
@@ -125,15 +127,14 @@ export default class CursorWrapExtension extends Extension {
         this._wrapHorizontal = this._settings.get_boolean('wrap-horizontal');
         this._wrapVertical = this._settings.get_boolean('wrap-vertical');
 
+        this._stopTracking();
         if (this._wrapHorizontal || this._wrapVertical)
             this._startTracking();
-        else
-            this._stopTracking();
     }
 
     _updateMonitors() {
         this._monitors = Main.layoutManager.monitors.map(
-            ({ x, y, width, height }) => ({ x, y, width, height }));
+            ({x, y, width, height}) => ({x, y, width, height}));
 
         if (this._monitors.length === 0) {
             this._bounds = null;
@@ -150,10 +151,6 @@ export default class CursorWrapExtension extends Extension {
     }
 
     _startTracking() {
-        if (this._tracking)
-            return;
-        this._tracking = true;
-
         if (this._isX11) {
             this._pollId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
                 X11_POLL_INTERVAL_MS, () => {
@@ -167,14 +164,10 @@ export default class CursorWrapExtension extends Extension {
     }
 
     _stopTracking() {
-        if (!this._tracking)
-            return;
-        this._tracking = false;
-
         this._cursorTracker.disconnectObject(this);
 
         if (this._pollId) {
-            GLib.source_remove(this._pollId);
+            GLib.Source.remove(this._pollId);
             this._pollId = 0;
         }
 
@@ -226,13 +219,13 @@ export default class CursorWrapExtension extends Extension {
     }
 
     _warp(fromX, fromY, target) {
-        let last = { x: Math.round(fromX), y: Math.round(fromY) };
+        let last = {x: Math.round(fromX), y: Math.round(fromY)};
         for (const point of this._getWarpPath(fromX, fromY, target)) {
             const x = Math.round(point.x);
             const y = Math.round(point.y);
             if (x !== last.x || y !== last.y)
                 this._seat.warp_pointer(x, y);
-            last = { x, y };
+            last = {x, y};
         }
     }
 
@@ -257,7 +250,7 @@ export default class CursorWrapExtension extends Extension {
         if (row === null)
             return [target];
 
-        return [{ x: fromX, y: row }, { x: target.x, y: row }, target];
+        return [{x: fromX, y: row}, {x: target.x, y: row}, target];
     }
 
     // Returns the point to warp to when (x, y) is on an outer edge of the
