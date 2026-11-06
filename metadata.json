@@ -5,5 +5,5 @@
   "shell-version": ["48", "49", "50", "51"],
   "url": "https://github.com/friscic/gnome-cursor-wrap",
   "settings-schema": "org.gnome.shell.extensions.cursor-wrap",
-  "version-name": "1.1"
+  "version-name": "1.2"
 }
