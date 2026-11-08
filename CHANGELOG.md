@@ -6,6 +6,15 @@ date-free version headings that match `version-name` in `metadata.json`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Monitors above each other (for example a laptop below an external monitor,
+  or a 2x2 grid): a left or right wrap that had to reach a monitor above or
+  below stopped partway at the end of the top bar, and a top or bottom wrap
+  next to a lower monitor's hot corner stopped at that monitor's top edge.
+  The pointer now moves from monitor to monitor, crossing each seam clear of
+  GNOME Shell's barriers.
+
 ### Changed
 
 - Maintenance tooling: the supported GNOME versions now come from a single

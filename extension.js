@@ -81,6 +81,25 @@ function findClearValue(preferred, min, max, blockedRanges) {
     return best;
 }
 
+// The seam between two monitors that share part of an edge, or null. A seam
+// between side-by-side monitors is crossed along a row in [start, end); one
+// between monitors above each other along a column.
+function getSeam(a, b) {
+    if (a.x + a.width === b.x || b.x + b.width === a.x) {
+        const start = Math.max(a.y, b.y);
+        const end = Math.min(a.y + a.height, b.y + b.height);
+        if (end > start)
+            return {crossedBy: 'row', start, end};
+    }
+    if (a.y + a.height === b.y || b.y + b.height === a.y) {
+        const start = Math.max(a.x, b.x);
+        const end = Math.min(a.x + a.width, b.x + b.width);
+        if (end > start)
+            return {crossedBy: 'column', start, end};
+    }
+    return null;
+}
+
 function insetInto(monitor, x, y) {
     return {
         monitor,
@@ -232,25 +251,89 @@ export default class CursorWrapExtension extends Extension {
     // Mutter applies pointer barriers to warps. A one-way barrier stops any
     // motion that crosses it unless every direction component of the motion
     // is allowed, so a diagonal warp stops at GNOME Shell's hot corner and top
-    // bar barriers. Vertical barriers only exist within the top bar's height
-    // of a monitor's top edge, and horizontal ones only on that edge. So move
-    // vertically within the source monitor to a row clear of those bands,
-    // horizontally along that row, then vertically within the destination.
+    // bar barriers. Those barriers all lie on monitor edges: vertical ones
+    // within the top bar's height of a monitor's top edge (hot corners, the
+    // end of the top bar), and horizontal ones along a top edge within that
+    // distance of a corner (hot corners). Motion inside one monitor never
+    // meets them. So walk the shortest chain of adjacent monitors from the
+    // source to the destination, cross each seam straight along a row or
+    // column clear of those bands, and move freely within each monitor:
+    // first along the edge the pointer is on, last within the destination.
     _getWarpPath(fromX, fromY, target) {
         const source = this._monitors.find(m => containsPoint(m, fromX, fromY));
-        const destination = target.monitor;
-        if (!source)
+        const crossings = source &&
+            this._findCrossings(source, target.monitor, fromX, fromY, target);
+        if (!crossings)
             return [target];
 
+        const path = [];
+        let x = fromX;
+        let y = fromY;
+        crossings.forEach(({monitor, row, column}, i) => {
+            const next = crossings[i + 1];
+            if (row !== undefined) {
+                path.push({x, y: row});
+                y = row;
+                x = next?.column ?? (next ? insetInto(monitor, target.x, y).x : target.x);
+            } else {
+                path.push({x: column, y});
+                x = column;
+                y = next?.row ?? (next ? insetInto(monitor, x, target.y).y : target.y);
+            }
+            path.push({x, y});
+        });
+        path.push({x, y: target.y}, target);
+        return path;
+    }
+
+    // Returns where the warp path crosses into each monitor along the
+    // shortest chain of adjacent monitors from source to destination, as
+    // {monitor, row} or {monitor, column}, or null if there is no such chain.
+    // The first crossing stays close to the pointer, later ones to the target.
+    _findCrossings(source, destination, fromX, fromY, target) {
         const band = Main.layoutManager.panelBox.height + 1;
-        const row = findClearValue(fromY,
-            Math.max(source.y, destination.y) + LANDING_INSET,
-            Math.min(source.y + source.height, destination.y + destination.height) - 1 - LANDING_INSET,
-            this._monitors.map(m => [m.y - 1, m.y + band]));
-        if (row === null)
-            return [target];
+        const blockedRows = this._monitors.map(m => [m.y - 1, m.y + band]);
+        const blockedColumns = this._monitors.flatMap(m => [
+            [m.x - 1, m.x + band],
+            [m.x + m.width - 1 - band, m.x + m.width],
+        ]);
 
-        return [{x: fromX, y: row}, {x: target.x, y: row}, target];
+        const cross = (from, to, preferredX, preferredY) => {
+            const seam = getSeam(from, to);
+            if (!seam)
+                return null;
+            const min = seam.start + LANDING_INSET;
+            const max = seam.end - 1 - LANDING_INSET;
+            if (seam.crossedBy === 'row') {
+                const row = findClearValue(preferredY, min, max, blockedRows);
+                return row === null ? null : {monitor: to, row};
+            }
+            const column = findClearValue(preferredX, min, max, blockedColumns);
+            return column === null ? null : {monitor: to, column};
+        };
+
+        // Breadth-first search over monitors joined by a crossable seam.
+        const previous = new Map([[source, null]]);
+        const queue = [source];
+        while (queue.length > 0 && !previous.has(destination)) {
+            const current = queue.shift();
+            for (const monitor of this._monitors) {
+                if (!previous.has(monitor) && cross(current, monitor, 0, 0)) {
+                    previous.set(monitor, current);
+                    queue.push(monitor);
+                }
+            }
+        }
+        if (!previous.has(destination))
+            return null;
+
+        const chain = [];
+        for (let m = destination; m; m = previous.get(m))
+            chain.unshift(m);
+
+        return chain.slice(1).map((monitor, i) => i === 0
+            ? cross(chain[i], monitor, fromX, fromY)
+            : cross(chain[i], monitor, target.x, target.y));
     }
 
     // Returns the point to warp to when (x, y) is on an outer edge of the

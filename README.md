@@ -189,11 +189,13 @@ of the layout's bounding box. If so, it moves the pointer with
 monitor that covers that edge. Each visit to an edge wraps at most once, so a
 blocked warp is not retried in a loop.
 
-Mutter applies pointer barriers to warps, and GNOME Shell puts barriers near
-the top of each monitor (hot corners, and the right end of the top bar on the
-primary monitor). A straight warp through that area stops at the barrier, so
-the extension moves the pointer in short straight steps along a row below
-those barriers.
+Mutter applies pointer barriers to warps, and GNOME Shell puts barriers on
+monitor edges near the top of each monitor (hot corners, and the right end of
+the top bar on the primary monitor). A straight warp across such an edge stops
+at the barrier. So the extension moves the pointer in short straight steps
+from monitor to monitor: it crosses each seam between monitors along a row or
+column clear of those barriers, which also works when monitors are stacked
+above each other.
 
 ## Development
 
