@@ -6,6 +6,8 @@ date-free version headings that match `version-name` in `metadata.json`.
 
 ## [Unreleased]
 
+## [1.3.1]
+
 ### Fixed
 
 - Vertical wrapping only worked on monitors that reach the top and bottom of
@@ -58,6 +60,7 @@ date-free version headings that match `version-name` in `metadata.json`.
 - Baseline for this changelog. Earlier history is in the git log and the
   GitHub releases.
 
-[Unreleased]: https://github.com/friscic/gnome-cursor-wrap/compare/v1.3...HEAD
+[Unreleased]: https://github.com/friscic/gnome-cursor-wrap/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/friscic/gnome-cursor-wrap/compare/v1.3...v1.3.1
 [1.3]: https://github.com/friscic/gnome-cursor-wrap/compare/v1.2...v1.3
 [1.2]: https://github.com/friscic/gnome-cursor-wrap/releases/tag/v1.2
