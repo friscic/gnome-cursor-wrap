@@ -5,8 +5,9 @@
 // (flush and centered), an L shape, and a 2x2 grid. The primary monitor, and
 // with it the top bar and its barriers, is a lower one, so the top bar band
 // sits in the middle of the layout's left edge. Explicit checks pin landing
-// spots and the documented limitation that edges facing empty space inside
-// the bounding box do not wrap; the sweeps push into every outer edge.
+// spots: left and right edges wrap only on the bounding box, while top and
+// bottom edges wrap wherever no monitor is above or below, within their
+// column. The sweeps push into every wrapping edge.
 
 import {defineTest, sweepOuterEdges} from './lib/harness.js';
 
@@ -40,7 +41,7 @@ export const {init, run} = defineTest(async t => {
 
     await t.moveTo(1600, 100);
     t.push(0, -5000);
-    await t.expectPointerStays('stacked: top of A beyond B\'s width lands on B\'s corner', 1276, 2100);
+    await t.expectPointerStays('stacked: top of A beyond B\'s width wraps within A', 1600, 1076);
 
     await t.moveTo(500, 2050);
     t.push(0, 5000);
@@ -52,7 +53,7 @@ export const {init, run} = defineTest(async t => {
 
     await t.moveTo(1600, 1050);
     t.push(0, 5000);
-    await t.expectPointerStays('stacked: bottom of A beside B is not an outer edge', 1600, 1079);
+    await t.expectPointerStays('stacked: bottom of A beside B wraps to the top of A', 1600, 3);
 
     await t.moveTo(1200, 1600);
     t.push(5000, 0);
@@ -69,7 +70,10 @@ export const {init, run} = defineTest(async t => {
 
     await t.moveTo(100, 100);
     t.push(0, -5000);
-    await t.expectPointerStays('centered: top of A left of B lands on B\'s corner', 323, 2100);
+    await t.expectPointerStays('centered: top of A left of B wraps within A', 100, 1076);
+    await t.moveTo(500, 100);
+    t.push(0, -5000);
+    await t.expectPointerStays('centered: top of A above B wraps to the bottom of B', 500, 2100);
 
     await sweepOuterEdges(t, 'centered', 400, 61);
 
@@ -78,7 +82,7 @@ export const {init, run} = defineTest(async t => {
 
     await t.moveTo(2500, 1150);
     t.push(0, -5000);
-    await t.expectPointerStays('L shape: top of U beside A is not an outer edge', 2500, 1080);
+    await t.expectPointerStays('L shape: top of U beside A wraps to the bottom of U', 2500, 2516);
 
     await t.moveTo(1900, 500);
     t.push(5000, 0);
@@ -86,7 +90,10 @@ export const {init, run} = defineTest(async t => {
 
     await t.moveTo(2500, 2400);
     t.push(0, 5000);
-    await t.expectPointerStays('L shape: bottom of U beyond A\'s width lands on A\'s corner', 1916, 3);
+    await t.expectPointerStays('L shape: bottom of U beyond A\'s width wraps to the top of U', 2500, 1083);
+    await t.moveTo(500, 2400);
+    t.push(0, 5000);
+    await t.expectPointerStays('L shape: bottom of U below A wraps to the top of A', 500, 3);
 
     await t.moveTo(3400, 1500);
     t.push(5000, 0);

@@ -30,7 +30,9 @@ Windows, this is the same idea for the GNOME desktop on Linux.
 ## Features
 
 - Horizontal wrap (far-left ⟷ far-right outer edge), on by default.
-- Optional vertical wrap (top ⟷ bottom outer edge).
+- Optional vertical wrap (top ⟷ bottom), on every monitor: the pointer keeps
+  its horizontal position and wraps between the highest and lowest monitor at
+  that position, even when monitors have different heights.
 - Works with one or more monitors and adapts when you rearrange, add, or
   remove displays.
 - Only the **outer** edges of the whole layout wrap. Seams between adjacent
@@ -148,9 +150,10 @@ No. It is a GNOME Shell extension and only runs in GNOME.
   on the far right, and the Activities hot corner (top left; Ubuntu turns hot
   corners off by default). Moving the dock to the bottom avoids this with
   horizontal wrapping.
-- Only edges on the outer bounding box of the layout wrap. In staggered or
-  L-shaped layouts, a monitor edge that faces empty space but is not on the
-  bounding box does not wrap.
+- Left and right edges only wrap on the outer bounding box of the layout. In
+  staggered or L-shaped layouts, a left or right monitor edge that faces empty
+  space but is not on the bounding box does not wrap. Top and bottom edges
+  wrap wherever no monitor is above or below them.
 - Pointer barriers from other extensions can stop a wrap partway, for example
   a dock set to auto-hide with "push to reveal" on the side of a monitor in the
   middle of the layout. The pointer then stops at that monitor's edge. GNOME

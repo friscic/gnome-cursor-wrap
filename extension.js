@@ -350,13 +350,35 @@ export default class CursorWrapExtension extends Extension {
                 return this._landInColumn(bounds.left + LANDING_INSET, y);
         }
 
-        if (this._wrapVertical) {
-            if (y < bounds.top + EDGE_ZONE)
-                return this._landInRow(bounds.bottom - 1 - LANDING_INSET, x);
-            if (y >= bounds.bottom - EDGE_ZONE)
-                return this._landInRow(bounds.top + LANDING_INSET, x);
-        }
+        if (this._wrapVertical)
+            return this._getVerticalWrapTarget(x, y);
 
+        return null;
+    }
+
+    // Vertical wrapping works per column, so it also works on monitors that
+    // do not reach the top or bottom of the layout, as in a row of monitors
+    // with different heights. A top edge with nothing above it wraps to the
+    // bottom of the lowest monitor in that column, often the same monitor,
+    // and a bottom edge with nothing below it to the top of the highest one.
+    // x never changes.
+    _getVerticalWrapTarget(x, y) {
+        const column = this._monitors.filter(m => x >= m.x && x < m.x + m.width);
+        const monitor = column.find(m => y >= m.y && y < m.y + m.height);
+        if (!monitor)
+            return null;
+
+        const isOpen = edgeY => !column.some(m => edgeY >= m.y && edgeY < m.y + m.height);
+        const bottomOf = m => m.y + m.height;
+
+        if (y < monitor.y + EDGE_ZONE && isOpen(monitor.y - 1)) {
+            const lowest = column.reduce((a, b) => bottomOf(b) > bottomOf(a) ? b : a);
+            return insetInto(lowest, x, bottomOf(lowest) - 1 - LANDING_INSET);
+        }
+        if (y >= bottomOf(monitor) - EDGE_ZONE && isOpen(bottomOf(monitor))) {
+            const highest = column.reduce((a, b) => b.y < a.y ? b : a);
+            return insetInto(highest, x, highest.y + LANDING_INSET);
+        }
         return null;
     }
 
@@ -368,13 +390,6 @@ export default class CursorWrapExtension extends Extension {
         const monitor = findClosest(
             this._monitors.filter(m => x >= m.x && x < m.x + m.width),
             m => distanceToRange(y, m.y, m.y + m.height - 1));
-        return monitor ? insetInto(monitor, x, y) : null;
-    }
-
-    _landInRow(y, x) {
-        const monitor = findClosest(
-            this._monitors.filter(m => y >= m.y && y < m.y + m.height),
-            m => distanceToRange(x, m.x, m.x + m.width - 1));
         return monitor ? insetInto(monitor, x, y) : null;
     }
 }

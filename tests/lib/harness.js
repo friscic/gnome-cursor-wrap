@@ -302,24 +302,12 @@ class TestContext {
     }
 }
 
-// Where a push with this delta ends up along one axis: the first or last
-// pixel of the layout, or unchanged if the push does not move along it.
-function edgeCoordinate(position, delta, start, end) {
-    if (delta < 0)
-        return start;
-    if (delta > 0)
-        return end - 1;
-    return position;
-}
-
-// Pushes into the edge in direction (dx, dy) from (x, y) and checks that the
-// pointer lands where the extension computes it should, i.e. that no barrier
-// stops the wrap halfway. Exact landing spots are checked by the tests.
-async function checkWrap(t, name, x, y, dx, dy) {
+// Pushes from (x, y) in direction (dx, dy) into the edge point (edgeX, edgeY)
+// and checks that the pointer lands where the extension computes it should,
+// i.e. that no barrier stops the wrap halfway. Exact landing spots are
+// checked by the tests.
+async function checkWrap(t, name, x, y, dx, dy, edgeX, edgeY) {
     await t.moveTo(x, y);
-    const {left, top, right, bottom} = t.instance._bounds;
-    const edgeX = edgeCoordinate(x, dx, left, right);
-    const edgeY = edgeCoordinate(y, dy, top, bottom);
     const target = t.instance._getWrapTarget(edgeX, edgeY);
     if (!target) {
         t.check(`${name} from (${x}, ${y})`, false, `no wrap target for edge point (${edgeX}, ${edgeY})`);
@@ -329,23 +317,29 @@ async function checkWrap(t, name, x, y, dx, dy) {
     await t.expectPointer(`${name} from (${x}, ${y})`, Math.round(target.x), Math.round(target.y));
 }
 
-// Pushes into every outer edge of the current layout, every stepX / stepY
-// pixels, and checks each wrap with checkWrap(). Turn on vertical wrapping
-// first to cover the top and bottom edges.
+// Pushes into every wrapping edge of the current layout, every stepX / stepY
+// pixels, and checks each wrap with checkWrap(). Left and right edges wrap on
+// the layout's bounding box; top and bottom edges wherever no monitor is
+// above or below. Turn on vertical wrapping first to cover those.
 export async function sweepOuterEdges(t, name, stepX, stepY) {
-    const {left, top, right, bottom} = t.instance._bounds;
-    for (const m of t.instance._monitors) {
+    const {left, right} = t.instance._bounds;
+    const monitors = t.instance._monitors;
+    const isOpen = (x, y) => !monitors.some(m =>
+        x >= m.x && x < m.x + m.width && y >= m.y && y < m.y + m.height);
+
+    for (const m of monitors) {
         for (let y = m.y + 1; y < m.y + m.height; y += stepY) {
             if (m.x === left)
-                await checkWrap(t, `${name}: left edge`, m.x + 50, y, -5000, 0);
+                await checkWrap(t, `${name}: left edge`, m.x + 50, y, -5000, 0, left, y);
             if (m.x + m.width === right)
-                await checkWrap(t, `${name}: right edge`, m.x + m.width - 50, y, 5000, 0);
+                await checkWrap(t, `${name}: right edge`, m.x + m.width - 50, y, 5000, 0, right - 1, y);
         }
+        const bottom = m.y + m.height;
         for (let x = m.x + 1; x < m.x + m.width; x += stepX) {
-            if (m.y === top)
-                await checkWrap(t, `${name}: top edge`, x, m.y + 50, 0, -5000);
-            if (m.y + m.height === bottom)
-                await checkWrap(t, `${name}: bottom edge`, x, m.y + m.height - 50, 0, 5000);
+            if (isOpen(x, m.y - 1))
+                await checkWrap(t, `${name}: top edge`, x, m.y + 50, 0, -5000, x, m.y);
+            if (isOpen(x, bottom))
+                await checkWrap(t, `${name}: bottom edge`, x, bottom - 50, 0, 5000, x, bottom - 1);
         }
     }
 }

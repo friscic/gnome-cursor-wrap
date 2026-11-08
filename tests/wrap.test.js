@@ -74,9 +74,14 @@ export const {init, run} = defineTest(async t => {
     await t.moveTo(500, 1000);
     t.push(0, 5000);
     await t.expectPointerStays('bottom edge wraps to the top', 500, 3);
+    // B is shorter than A, so its bottom edge is not on the layout's bounding
+    // box. Vertical wrapping works per column, so B still wraps within itself.
     await t.moveTo(2500, 100);
     t.push(0, -5000);
-    await t.expectPointerStays('top of B wraps onto A, because B is shorter', 1916, 1076);
+    await t.expectPointerStays('top of the shorter B wraps to its own bottom', 2500, 1020);
+    await t.moveTo(2500, 1000);
+    t.push(0, 5000);
+    await t.expectPointerStays('bottom of the shorter B wraps to its top', 2500, 3);
 
     // Both directions on: a corner wraps horizontally once, and the landing
     // spot is inset from the top so it cannot chain into a vertical wrap.

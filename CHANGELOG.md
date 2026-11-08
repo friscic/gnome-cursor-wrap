@@ -6,6 +6,15 @@ date-free version headings that match `version-name` in `metadata.json`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Vertical wrapping only worked on monitors that reach the top and bottom of
+  the whole layout. In a row of monitors with different heights or vertical
+  offsets, for example portrait and landscape monitors side by side, the
+  others did not wrap at all. Top and bottom edges now wrap wherever no
+  monitor is above or below them, keeping the pointer's horizontal position:
+  to the lowest or highest monitor at that position, usually the same one.
+
 ## [1.3]
 
 ### Fixed

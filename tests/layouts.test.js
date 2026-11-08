@@ -57,7 +57,25 @@ export const {init, run} = defineTest(async t => {
     t.push(200, 0);
     await t.expectPointerStays('ultrawide -> tall portrait seam is untouched', 4600, 1200);
 
+    // Only the tall portrait reaches the top and bottom of the layout. The
+    // other two monitors must still wrap vertically within their column.
     await t.setSetting('wrap-vertical', true);
+    await t.moveTo(500, 400);
+    t.push(0, -5000);
+    await t.expectPointerStays('portrait: top wraps to its bottom', 500, 2238);
+    await t.moveTo(500, 2200);
+    t.push(0, 5000);
+    await t.expectPointerStays('portrait: bottom wraps to its top', 500, 325);
+    await t.moveTo(2500, 900);
+    t.push(0, -5000);
+    await t.expectPointerStays('ultrawide: top, through the top bar, wraps to its bottom', 2500, 2238);
+    await t.moveTo(2500, 2200);
+    t.push(0, 5000);
+    await t.expectPointerStays('ultrawide: bottom wraps to its top', 2500, 805);
+    await t.moveTo(5000, 100);
+    t.push(0, -5000);
+    await t.expectPointerStays('tall portrait: top wraps to its bottom', 5000, 2556);
+
     await sweepOuterEdges(t, 'row layout', 400, 37);
 
     await t.applyLayout([{...A, x: 0, y: 500, primary: true}, {...B, x: 1920, y: 0}]);
