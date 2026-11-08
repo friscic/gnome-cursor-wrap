@@ -9,14 +9,25 @@ CONTAINER ?= docker
 GNOME ?= 51
 TEST_LOGS ?= $(CURDIR)/test-logs
 
-# Distribution image whose GNOME Shell each supported version is tested on.
-GNOME_VERSIONS = 48 49 50 51
+# Supported GNOME versions come from shell-version in metadata.json, read by
+# tests/supported-versions.sh, so this list and the published metadata cannot
+# drift apart. CI reads the same script to build its test matrix.
+GNOME_VERSIONS := $(shell tests/supported-versions.sh)
+
+# The next GNOME version, tested by the canary target against a rolling image
+# before a stable distribution ships it.
+GNOME_NEXT := $(shell tests/supported-versions.sh --next)
+
+# Distribution image whose GNOME Shell each version is tested on. The canary
+# (GNOME_NEXT) rides Fedora Rawhide, which carries GNOME betas and .0 releases
+# earliest. Add a pinned base below when a version becomes supported.
 gnome_base_48 = debian:trixie
 gnome_base_49 = fedora:43
 gnome_base_50 = ubuntu:26.04
 gnome_base_51 = fedora:45
+gnome_base_$(GNOME_NEXT) ?= fedora:rawhide
 
-.PHONY: all pack install link uninstall schemas clean lint test test-container test-all
+.PHONY: all pack install link uninstall schemas clean lint check-versions print-base test test-container test-canary test-all
 
 all: pack
 
@@ -72,13 +83,14 @@ test:
 # Run the integration tests in a container with GNOME $(GNOME).
 test-container:
 	@if [ -z "$(gnome_base_$(GNOME))" ]; then \
-		echo "No test image for GNOME $(GNOME); supported: $(GNOME_VERSIONS)"; exit 1; fi
+		echo "No test image for GNOME $(GNOME); supported: $(GNOME_VERSIONS), canary: $(GNOME_NEXT)"; exit 1; fi
 	$(CONTAINER) build --build-arg BASE=$(gnome_base_$(GNOME)) \
 		-f tests/containers/Containerfile -t cursor-wrap-test:gnome$(GNOME) tests/containers
 	rm -rf $(TEST_LOGS)/gnome$(GNOME)
 	mkdir -p $(TEST_LOGS)/gnome$(GNOME)
 	$(CONTAINER) run --rm -v $(CURDIR):/src:ro -v $(TEST_LOGS)/gnome$(GNOME):/logs \
-		-e CW_LOG_DIR=/logs cursor-wrap-test:gnome$(GNOME)
+		-e CW_LOG_DIR=/logs -e CW_IGNORE_SHELL_VERSION=$(CW_IGNORE_SHELL_VERSION) \
+		cursor-wrap-test:gnome$(GNOME)
 
 # Run the integration tests on every supported GNOME version.
 test-all:
@@ -87,3 +99,22 @@ test-all:
 	done; \
 	if [ -n "$$failed" ]; then echo "Failed on GNOME:$$failed"; exit 1; fi; \
 	echo "All GNOME versions passed: $(GNOME_VERSIONS)"
+
+# Test against the next, not-yet-supported GNOME on a rolling image. Run on a
+# schedule to catch breakage from a new GNOME release early. A failure here is
+# an early warning, not a regression in a supported version. The shell-version
+# check is switched off, since metadata.json does not list this version yet.
+test-canary:
+	@echo "Canary: testing against the next GNOME ($(GNOME_NEXT)) on $(gnome_base_$(GNOME_NEXT))"
+	$(MAKE) --no-print-directory test-container GNOME=$(GNOME_NEXT) CW_IGNORE_SHELL_VERSION=1
+
+# Show the supported GNOME versions (from shell-version in metadata.json) and
+# the next version the canary probes.
+check-versions:
+	@echo "Supported GNOME versions (from metadata.json): $(GNOME_VERSIONS)"
+	@echo "Next version probed by the canary: $(GNOME_NEXT)"
+
+# Print the container base image for GNOME=<v>, or nothing if none is defined.
+# CI uses this to assert that every supported version has a test image.
+print-base:
+	@echo "$(gnome_base_$(GNOME))"

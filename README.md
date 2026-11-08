@@ -224,7 +224,9 @@ This needs Node.js and npm. It installs the versions pinned in `package.json`
 into `node_modules/` and checks the code against GNOME's shared ESLint rules
 (`eslint-config-gnome`), the same rules GNOME Shell uses for its own code.
 `.vscode/settings.json` sets VS Code-based editors to format code in that
-style.
+style. `eslint-config-gnome` is pinned to a specific GitLab commit, so
+Dependabot cannot bump it; [`RELEASING.md`](RELEASING.md) explains how to
+update it by hand.
 
 ### Tests
 
@@ -260,22 +262,25 @@ its shell; the helpers are in `tests/lib/harness.js`.
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to
 `master`, on pull requests, and on version tags. It runs ESLint and checks
-`metadata.json` and the schema, then runs the integration tests on GNOME 48,
-49, 50, and 51 in parallel. Each run keeps the logs as artifacts.
+`metadata.json` and the schema, then runs the integration tests on every
+supported GNOME version in parallel. The version list has one source of truth,
+the `shell-version` array in `metadata.json`, read by
+`tests/supported-versions.sh`; the test matrix and the Makefile both read it,
+so they cannot drift apart. Each run keeps the logs as artifacts.
+
+Once a month (and on demand) a **canary** job runs the same tests against the
+next, not-yet-supported GNOME on a rolling image, as an early warning that a
+new GNOME release moved an API the extension relies on. It never gates pushes
+or releases. See [`RELEASING.md`](RELEASING.md) for how to adopt a new GNOME
+version when the canary passes.
 
 ### Releasing
 
-1. Set `version-name` in `metadata.json` (for example `"1.3"`) and commit.
-2. Push a matching tag:
-
-   ```bash
-   git tag v1.3
-   git push origin v1.3
-   ```
-
-CI runs every check. If they pass, it attaches the zip that was tested on
-GNOME 51 to the `v1.3` GitHub release, creating the release if needed. Upload
-the same zip to extensions.gnome.org.
+Bump `version-name` in `metadata.json`, update `CHANGELOG.md`, and push a
+matching `v<version>` tag; CI runs every check and, if they pass, attaches the
+zip tested on the newest supported GNOME to the GitHub release. The full
+checklist, including how to adopt a new GNOME version and how to update the
+pinned `eslint-config-gnome`, is in [`RELEASING.md`](RELEASING.md).
 
 ## License
 

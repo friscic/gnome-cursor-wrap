@@ -6,15 +6,37 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+  # Monthly canary run against the next, not-yet-supported GNOME. See the
+  # canary job below.
+  schedule:
+    - cron: '0 6 1 * *'
 
 permissions:
   contents: read
 
+# The event name keeps the monthly scheduled run on master from being
+# cancelled by (or cancelling) a push to master.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
+  # Read the supported GNOME versions from metadata.json (via
+  # tests/supported-versions.sh) so the test matrix has one source of truth
+  # with the Makefile and the published metadata.
+  versions:
+    name: Supported versions
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+      next: ${{ steps.read.outputs.next }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - id: read
+        run: |
+          echo "matrix=$(tests/supported-versions.sh --json)" >> "$GITHUB_OUTPUT"
+          echo "next=$(tests/supported-versions.sh --next)" >> "$GITHUB_OUTPUT"
+
   lint:
     name: Lint
     runs-on: ubuntu-24.04
@@ -39,6 +61,21 @@ jobs:
           }
           glib-compile-schemas --strict --dry-run schemas/
 
+      - name: Check every supported GNOME version has a test container base
+        run: |
+          missing=
+          for v in $(tests/supported-versions.sh); do
+            base=$(make --no-print-directory print-base GNOME="$v")
+            if [ -z "$base" ]; then
+              missing="$missing $v"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::metadata.json lists GNOME$missing with no gnome_base_<v> in the Makefile; add a test image or drop the version"
+            exit 1
+          fi
+          echo "All supported versions have a container base: $(tests/supported-versions.sh)"
+
       - name: Check that the tag matches version-name in metadata.json
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -50,12 +87,12 @@ jobs:
 
   test:
     name: GNOME ${{ matrix.gnome }}
-    needs: lint
+    needs: [versions, lint]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        gnome: [48, 49, 50, 51]
+        gnome: ${{ fromJSON(needs.versions.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -70,18 +107,49 @@ jobs:
           path: test-logs/gnome${{ matrix.gnome }}/
           if-no-files-found: error
 
+  # Early warning for the next GNOME release. Runs only on the monthly schedule
+  # and on demand, so it never gates pushes or releases. Tests the next version
+  # against a rolling image; if it fails, a new GNOME likely moved an API this
+  # extension uses. A failure marks the scheduled run red, which is what makes
+  # GitHub send a notification, so do not add continue-on-error here.
+  canary:
+    name: Canary (next GNOME ${{ needs.versions.outputs.next }})
+    needs: versions
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Run the integration tests against the next GNOME on a rolling image
+        run: make test-canary
+
+      - name: Upload canary logs and results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: test-logs-gnome${{ needs.versions.outputs.next }}-canary
+          path: test-logs/gnome${{ needs.versions.outputs.next }}/
+          if-no-files-found: warn
+
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs: [versions, test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      # Publish exactly the zip that passed the tests on the newest GNOME.
+      # Publish exactly the zip that passed the tests on the newest supported
+      # GNOME. The version is read from metadata.json rather than hard-coded.
+      - uses: actions/checkout@v7.0.1
+
+      - name: Determine the newest supported GNOME version
+        id: newest
+        run: echo "gnome=$(tests/supported-versions.sh | tr ' ' '\n' | sort -n | tail -1)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: test-logs-gnome51
+          name: test-logs-gnome${{ steps.newest.outputs.gnome }}
           path: tested
 
       - name: Attach the zip to the GitHub release

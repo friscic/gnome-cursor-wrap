@@ -15,6 +15,10 @@
 #   CW_LOG_DIR   where logs, results, the tested zip and screenshots go
 #                (default: a new temporary directory)
 #   CW_TIMEOUT   seconds before a single test run is killed (default: 300)
+#   CW_IGNORE_SHELL_VERSION
+#                set to 1 to load the extension even if shell-version in
+#                metadata.json does not list the running GNOME (used by the
+#                canary run against the next, not-yet-supported version)
 
 set -uo pipefail
 
@@ -110,10 +114,16 @@ run_test() {
     unzip -q "$BUILD/$ZIP" -d "$work/data/gnome-shell/extensions/$UUID"
     glib-compile-schemas --strict "$work/data/gnome-shell/extensions/$UUID/schemas"
 
+    # GNOME Shell refuses to enable an extension whose shell-version does not
+    # list the running version, so the canary has to switch that check off.
+    local ignore_version=false
+    [ "${CW_IGNORE_SHELL_VERSION:-}" = 1 ] && ignore_version=true
+
     cat > "$work/config/glib-2.0/settings/keyfile" <<EOF
 [org/gnome/shell]
 enabled-extensions=['$UUID']
 welcome-dialog-last-shown-version='999'
+disable-extension-version-validation=$ignore_version
 
 [org/gnome/desktop/interface]
 enable-animations=false
