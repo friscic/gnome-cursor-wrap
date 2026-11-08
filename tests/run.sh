@@ -10,6 +10,8 @@
 # into. Header comments in a test file configure its run:
 #   // @monitors 1920x1080 1280x1024    virtual monitors to create
 #   // @session x11                     X11 session under Xvfb (GNOME 48/49)
+#   // @mutter-features scale-monitor-framebuffer
+#                                       Mutter experimental features to turn on
 #
 # Environment:
 #   CW_LOG_DIR   where logs, results, the tested zip and screenshots go
@@ -84,10 +86,11 @@ cleanup_work() {
 
 run_test() {
     local test=$1
-    local name monitors session work result log status xvfb_pid=
+    local name monitors session features work result log status xvfb_pid=
     name=$(basename "$test" .test.js)
     monitors=$(header "$test" monitors)
     session=$(header "$test" session)
+    features=$(header "$test" mutter-features)
     monitors=${monitors:-1920x1080 1280x1024}
     session=${session:-wayland}
     result=$LOG_DIR/$name.result.json
@@ -129,6 +132,15 @@ disable-extension-version-validation=$ignore_version
 enable-animations=false
 enable-hot-corners=true
 EOF
+
+    if [ -n "$features" ]; then
+        local feature list=
+        for feature in $features; do
+            list+="${list:+, }'$feature'"
+        done
+        printf '\n[org/gnome/mutter]\nexperimental-features=[%s]\n' "$list" \
+            >> "$work/config/glib-2.0/settings/keyfile"
+    fi
 
     if [ "$session" = x11 ]; then
         # Xvfb picks a free display number and writes it to fd 3.

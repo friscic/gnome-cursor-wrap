@@ -251,14 +251,20 @@ and the tested zip are written to `test-logs/`.
 
 | Test file | What it covers |
 | --- | --- |
-| `wrap.test.js` | Core behaviour on two monitors: both directions, landing spots, no bounce back, button held, settings, layout changes, disable and enable |
+| `wrap.test.js` | Core behaviour on two monitors: both directions, landing spots, no bounce back, button held, settings, layout changes, disable and enable (20 cycles, checking nothing is left behind) |
 | `layouts.test.js` | Mixed monitor sizes and offsets, and a push into every outer edge with hot corners on, checking that no barrier stops a wrap |
+| `stacked.test.js` | Monitors above each other: laptop below an external monitor (flush and centered), an L shape, and a 2x2 grid, with the primary monitor and its top bar in the middle of the layout |
+| `scaling.test.js` | A 1x monitor next to a HiDPI one at 2x and 1.25x, in logical and physical layout mode |
 | `prefs.test.js` | The preferences window opens without errors |
 | `x11.test.js` | X11 session with the polling fallback; runs only where GNOME Shell has an X11 session (GNOME 48 here) |
 
 A run fails if a check fails, the shell times out, or the extension logs an
-error. Header comments in a test file (`// @monitors`, `// @session`) set up
-its shell; the helpers are in `tests/lib/harness.js`.
+error. Header comments in a test file (`// @monitors`, `// @session`,
+`// @mutter-features`) set up its shell; the helpers are in
+`tests/lib/harness.js`.
+
+`make shellcheck` checks the test scripts with ShellCheck, run from a pinned
+container image; CI runs it next to ESLint.
 
 ### Continuous integration
 

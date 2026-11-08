@@ -6,7 +6,7 @@
 // into every outer edge at many points and checks that each wrap reaches the
 // spot the extension aimed for, i.e. that no barrier stops it halfway.
 
-import {defineTest} from './lib/harness.js';
+import {defineTest, sweepOuterEdges} from './lib/harness.js';
 
 const portrait = {width: 1080, height: 1920};
 const ultrawide = {width: 3440, height: 1440};
@@ -19,50 +19,6 @@ const rowLayout = [
     {...ultrawide, x: 1080, y: 802, primary: true},
     {...tallPortrait, x: 4520, y: 0},
 ];
-
-// Where a push with this delta ends up along one axis: the first or last
-// pixel of the layout, or unchanged if the push does not move along it.
-function edgeCoordinate(position, delta, start, end) {
-    if (delta < 0)
-        return start;
-    if (delta > 0)
-        return end - 1;
-    return position;
-}
-
-// Pushes into the edge in direction (dx, dy) from (x, y) and checks that the
-// pointer lands where the extension computes it should.
-async function checkWrap(t, name, x, y, dx, dy) {
-    await t.moveTo(x, y);
-    const {left, top, right, bottom} = t.instance._bounds;
-    const edgeX = edgeCoordinate(x, dx, left, right);
-    const edgeY = edgeCoordinate(y, dy, top, bottom);
-    const target = t.instance._getWrapTarget(edgeX, edgeY);
-    if (!target) {
-        t.check(`${name} from (${x}, ${y})`, false, `no wrap target for edge point (${edgeX}, ${edgeY})`);
-        return;
-    }
-    t.push(dx, dy);
-    await t.expectPointer(`${name} from (${x}, ${y})`, Math.round(target.x), Math.round(target.y));
-}
-
-async function sweepOuterEdges(t, name, stepX, stepY) {
-    const {left, top, right, bottom} = t.instance._bounds;
-    for (const m of t.instance._monitors) {
-        for (let y = m.y + 1; y < m.y + m.height; y += stepY) {
-            if (m.x === left)
-                await checkWrap(t, `${name}: left edge`, m.x + 50, y, -5000, 0);
-            if (m.x + m.width === right)
-                await checkWrap(t, `${name}: right edge`, m.x + m.width - 50, y, 5000, 0);
-        }
-        for (let x = m.x + 1; x < m.x + m.width; x += stepX) {
-            if (m.y === top)
-                await checkWrap(t, `${name}: top edge`, x, m.y + 50, 0, -5000);
-            if (m.y + m.height === bottom)
-                await checkWrap(t, `${name}: bottom edge`, x, m.y + m.height - 50, 0, 5000);
-        }
-    }
-}
 
 export const {init, run} = defineTest(async t => {
     await t.setHotCorners(true);

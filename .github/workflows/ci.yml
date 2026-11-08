@@ -53,6 +53,9 @@ jobs:
       - name: ESLint
         run: npm run lint
 
+      - name: ShellCheck
+        run: make shellcheck
+
       - name: Validate metadata.json and the GSettings schema
         run: |
           python3 -m json.tool metadata.json > /dev/null

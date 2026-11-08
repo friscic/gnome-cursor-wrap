@@ -245,13 +245,30 @@ class TestContext {
     }
 
     // Arranges the virtual monitors. Each entry picks an unused monitor of
-    // that size; monitors not listed are turned off. The first entry, or the
-    // one with primary: true, becomes the primary monitor.
-    async applyLayout(layout) {
-        const [serial, monitors] = (await callDisplayConfig('GetCurrentState', null)).recursiveUnpack();
+    // that size (its mode, in physical pixels); monitors not listed are
+    // turned off. The first entry, or the one with primary: true, becomes the
+    // primary monitor. An entry's scale defaults to 1.
+    //
+    // layoutMode 'logical' or 'physical' switches Mutter's layout mode, which
+    // needs `// @mutter-features scale-monitor-framebuffer` in the test file.
+    // In logical mode x and y are logical coordinates and a scaled monitor
+    // takes up width / scale by height / scale; in physical mode everything is
+    // in physical pixels.
+    async applyLayout(layout, {layoutMode} = {}) {
+        const [serial, monitors, , properties] =
+            (await callDisplayConfig('GetCurrentState', null)).recursiveUnpack();
+        const modeIds = {logical: 1, physical: 2};
+        if (layoutMode && !(layoutMode in modeIds))
+            throw new Error(`harness: unknown layout mode ${layoutMode}`);
+        if (layoutMode && !properties['supports-changing-layout-mode'])
+            throw new Error('harness: this shell cannot change the layout mode; add // @mutter-features scale-monitor-framebuffer');
+        const logical = layoutMode
+            ? layoutMode === 'logical'
+            : properties['layout-mode'] === modeIds.logical;
+
         const used = new Set();
         const hasPrimary = layout.some(m => m.primary);
-        const logicalMonitors = layout.map(({width, height, x, y, primary}, i) => {
+        const logicalMonitors = layout.map(({width, height, x, y, scale = 1, primary}, i) => {
             const index = monitors.findIndex(([, modes], j) =>
                 !used.has(j) && modes.some(mode => mode[1] === width && mode[2] === height));
             if (index < 0)
@@ -260,13 +277,18 @@ class TestContext {
             const [[connector], modes] = monitors[index];
             const mode = modes.find(m => m[1] === width && m[2] === height);
             const isPrimary = hasPrimary ? !!primary : i === 0;
-            return [x, y, 1.0, 0, isPrimary, [[connector, mode[0], {}]]];
+            return [x, y, scale, 0, isPrimary, [[connector, mode[0], {}]]];
         });
 
+        const configProperties = layoutMode
+            ? {'layout-mode': new GLib.Variant('u', modeIds[layoutMode])}
+            : {};
         await callDisplayConfig('ApplyMonitorsConfig',
-            new GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', [serial, 1, logicalMonitors, {}]));
+            new GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', [serial, 1, logicalMonitors, configProperties]));
 
-        const wanted = layout.map(({width, height, x, y}) => ({x, y, width, height}));
+        const wanted = layout.map(({width, height, x, y, scale = 1}) => logical
+            ? {x, y, width: Math.round(width / scale), height: Math.round(height / scale)}
+            : {x, y, width, height});
         const applied = await waitFor(() => {
             const current = Main.layoutManager.monitors;
             return current.length === wanted.length &&
@@ -276,7 +298,55 @@ class TestContext {
             throw new Error(`harness: monitor layout ${JSON.stringify(wanted)} was not applied`);
         // Let hot corners, the top bar barrier, and the extension catch up.
         await sleep(300);
-        this.log(`layout ${JSON.stringify(wanted)}`);
+        this.log(`layout ${JSON.stringify(wanted)}${layoutMode ? ` (${layoutMode})` : ''}, top bar ${Main.layoutManager.panelBox.height} px`);
+    }
+}
+
+// Where a push with this delta ends up along one axis: the first or last
+// pixel of the layout, or unchanged if the push does not move along it.
+function edgeCoordinate(position, delta, start, end) {
+    if (delta < 0)
+        return start;
+    if (delta > 0)
+        return end - 1;
+    return position;
+}
+
+// Pushes into the edge in direction (dx, dy) from (x, y) and checks that the
+// pointer lands where the extension computes it should, i.e. that no barrier
+// stops the wrap halfway. Exact landing spots are checked by the tests.
+async function checkWrap(t, name, x, y, dx, dy) {
+    await t.moveTo(x, y);
+    const {left, top, right, bottom} = t.instance._bounds;
+    const edgeX = edgeCoordinate(x, dx, left, right);
+    const edgeY = edgeCoordinate(y, dy, top, bottom);
+    const target = t.instance._getWrapTarget(edgeX, edgeY);
+    if (!target) {
+        t.check(`${name} from (${x}, ${y})`, false, `no wrap target for edge point (${edgeX}, ${edgeY})`);
+        return;
+    }
+    t.push(dx, dy);
+    await t.expectPointer(`${name} from (${x}, ${y})`, Math.round(target.x), Math.round(target.y));
+}
+
+// Pushes into every outer edge of the current layout, every stepX / stepY
+// pixels, and checks each wrap with checkWrap(). Turn on vertical wrapping
+// first to cover the top and bottom edges.
+export async function sweepOuterEdges(t, name, stepX, stepY) {
+    const {left, top, right, bottom} = t.instance._bounds;
+    for (const m of t.instance._monitors) {
+        for (let y = m.y + 1; y < m.y + m.height; y += stepY) {
+            if (m.x === left)
+                await checkWrap(t, `${name}: left edge`, m.x + 50, y, -5000, 0);
+            if (m.x + m.width === right)
+                await checkWrap(t, `${name}: right edge`, m.x + m.width - 50, y, 5000, 0);
+        }
+        for (let x = m.x + 1; x < m.x + m.width; x += stepX) {
+            if (m.y === top)
+                await checkWrap(t, `${name}: top edge`, x, m.y + 50, 0, -5000);
+            if (m.y + m.height === bottom)
+                await checkWrap(t, `${name}: bottom edge`, x, m.y + m.height - 50, 0, 5000);
+        }
     }
 }
 

@@ -33,6 +33,13 @@ date-free version headings that match `version-name` in `metadata.json`.
 - `make test-canary`, `make check-versions`, and `make print-base` targets.
 - `CW_IGNORE_SHELL_VERSION=1` for `tests/run.sh`, which lets the canary load
   the extension on a GNOME version not yet listed in `shell-version`.
+- Tests for stacked layouts (laptop below an external monitor, L shape, 2x2
+  grid) and for scaled monitors (2x and 1.25x, logical and physical layout
+  mode), and a 20-cycle disable/enable test that checks nothing is left
+  behind.
+- `// @mutter-features` test header and a `layoutMode` option for
+  `applyLayout()` in the test harness.
+- ShellCheck for the test scripts (`make shellcheck`, also run in CI).
 - `CHANGELOG.md` and `RELEASING.md`.
 
 ## [1.2]

@@ -27,7 +27,7 @@ gnome_base_50 = ubuntu:26.04
 gnome_base_51 = fedora:45
 gnome_base_$(GNOME_NEXT) ?= fedora:rawhide
 
-.PHONY: all pack install link uninstall schemas clean lint check-versions print-base test test-container test-canary test-all
+.PHONY: all pack install link uninstall schemas clean lint shellcheck check-versions print-base test test-container test-canary test-all
 
 all: pack
 
@@ -74,6 +74,13 @@ node_modules: package.json package-lock.json
 # Lint all JavaScript with ESLint (needs Node.js and npm).
 lint: node_modules
 	npx eslint .
+
+# Check the test scripts with ShellCheck, run from its pinned container image
+# so local runs and CI use the same version.
+SHELLCHECK_IMAGE = koalaman/shellcheck:v0.11.0
+SHELL_SCRIPTS = tests/run.sh tests/supported-versions.sh tests/containers/entrypoint.sh
+shellcheck:
+	$(CONTAINER) run --rm -v $(CURDIR):/mnt:ro -w /mnt $(SHELLCHECK_IMAGE) $(SHELL_SCRIPTS)
 
 # Run the integration tests on the GNOME Shell installed here. This is safe in
 # a logged-in session: every test runs its own headless shell on a private bus.

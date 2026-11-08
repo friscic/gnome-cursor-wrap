@@ -117,6 +117,12 @@ export const {init, run} = defineTest(async t => {
     await t.moveTo(100, 500);
     t.push(-5000, 0);
     await t.expectPointerStays('single monitor wraps within itself', 1916, 500);
+    await t.moveTo(100, 5);
+    t.push(-5000, 0);
+    await t.expectPointerStays('single monitor wraps within the top bar band', 1916, 5);
+    await t.moveTo(1800, 5);
+    t.push(5000, 0);
+    await t.expectPointerStays('single monitor wraps back within the top bar band', 3, 5);
 
     // Disable and enable cleanly, as on screen lock and unlock.
     await t.setExtensionEnabled(false);
@@ -128,4 +134,23 @@ export const {init, run} = defineTest(async t => {
     await t.expectPointerStays('pointer leaves the edge', 10, 500);
     t.push(-5000, 0);
     await t.expectPointerStays('wraps after re-enabling', 1916, 500);
+
+    // Many lock/unlock cycles, as over a working day. After each disable the
+    // extension must hold no GLib sources or references to Shell objects, and
+    // after the last enable it must still wrap and stay put.
+    const leftovers = () => {
+        const i = t.instance;
+        return ['_cursorTracker', '_seat', '_settings', '_monitors', '_laterId', '_pollId']
+            .filter(name => i[name]);
+    };
+    let clean = true;
+    for (let cycle = 1; cycle <= 20 && clean; cycle++) {
+        clean = await t.setExtensionEnabled(false) &&
+            t.check(`cycle ${cycle}: nothing left after disable`, leftovers().length === 0,
+                `still set: ${leftovers().join(', ')}`) &&
+            await t.setExtensionEnabled(true);
+    }
+    await t.moveTo(100, 500);
+    t.push(-5000, 0);
+    await t.expectPointerStays('wraps after 20 disable/enable cycles', 1916, 500);
 });
