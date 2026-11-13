@@ -28,6 +28,13 @@ const LANDING_INSET = 3;
 // Polling interval for X11 sessions (GNOME 48/49 only), where the cursor
 // tracker does not report pointer motion to extensions.
 const X11_POLL_INTERVAL_MS = 10;
+const DWELL_DELAY_MS = 200;
+
+const WRAP_MODIFIERS = [
+    Clutter.ModifierType.SHIFT_MASK,
+    Clutter.ModifierType.MOD1_MASK,
+    Clutter.ModifierType.MOD4_MASK | Clutter.ModifierType.SUPER_MASK,
+];
 
 const BUTTONS_MASK =
     Clutter.ModifierType.BUTTON1_MASK |
@@ -143,15 +150,24 @@ export default class CursorWrapExtension extends Extension {
     }
 
     _updateSettings() {
-        this._wrapHorizontal = this._settings.get_boolean('wrap-horizontal');
-        this._wrapVertical = this._settings.get_boolean('wrap-vertical');
+        const horizontal = this._settings.get_boolean('wrap-horizontal');
+        const vertical = this._settings.get_boolean('wrap-vertical');
+        this._wrapLeft = horizontal && this._settings.get_boolean('wrap-left');
+        this._wrapRight = horizontal && this._settings.get_boolean('wrap-right');
+        this._wrapTop = vertical && this._settings.get_boolean('wrap-top');
+        this._wrapBottom = vertical && this._settings.get_boolean('wrap-bottom');
+        this._modifierMask = this._settings.get_boolean('require-modifier')
+            ? WRAP_MODIFIERS[this._settings.get_uint('wrap-modifier')]
+            : 0;
+        this._dwellEnabled = this._settings.get_boolean('enable-dwell');
 
         this._stopTracking();
-        if (this._wrapHorizontal || this._wrapVertical)
+        if (this._wrapLeft || this._wrapRight || this._wrapTop || this._wrapBottom)
             this._startTracking();
     }
 
     _updateMonitors() {
+        this._cancelDwell();
         this._monitors = Main.layoutManager.monitors.map(
             ({x, y, width, height}) => ({x, y, width, height}));
 
@@ -184,6 +200,7 @@ export default class CursorWrapExtension extends Extension {
 
     _stopTracking() {
         this._cursorTracker.disconnectObject(this);
+        this._cancelDwell();
 
         if (this._pollId) {
             GLib.Source.remove(this._pollId);
@@ -194,6 +211,14 @@ export default class CursorWrapExtension extends Extension {
             global.compositor.get_laters().remove(this._laterId);
             this._laterId = 0;
         }
+    }
+
+    _cancelDwell() {
+        if (this._dwellId) {
+            GLib.Source.remove(this._dwellId);
+            this._dwellId = 0;
+        }
+        this._dwellEdge = null;
     }
 
     // position-invalidated fires for every motion event (up to 1000 times a
@@ -210,7 +235,7 @@ export default class CursorWrapExtension extends Extension {
             });
     }
 
-    _checkPointer() {
+    _checkPointer(expectedEdge = null) {
         const [coords, mods] = this._cursorTracker.get_pointer();
         const target = this._getWrapTarget(coords.x, coords.y);
 
@@ -218,6 +243,7 @@ export default class CursorWrapExtension extends Extension {
         // when the warp is blocked (e.g. by a game confining the pointer) or
         // when the pointer is still reported at the old edge after a warp.
         if (!target) {
+            this._cancelDwell();
             this._armed = true;
             return;
         }
@@ -226,6 +252,7 @@ export default class CursorWrapExtension extends Extension {
         // tile it, drag and drop, or selecting text must keep working. The
         // pointer has to leave the edge after the drag before it wraps.
         if (mods & BUTTONS_MASK) {
+            this._cancelDwell();
             this._armed = false;
             return;
         }
@@ -233,6 +260,27 @@ export default class CursorWrapExtension extends Extension {
         if (!this._armed)
             return;
 
+        if (this._modifierMask && !(mods & this._modifierMask)) {
+            this._cancelDwell();
+            return;
+        }
+
+        if (this._dwellEnabled && target.edge !== expectedEdge) {
+            if (this._dwellEdge !== target.edge) {
+                this._cancelDwell();
+                this._dwellEdge = target.edge;
+                this._dwellId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
+                    DWELL_DELAY_MS, () => {
+                        this._dwellId = 0;
+                        this._dwellEdge = null;
+                        this._checkPointer(target.edge);
+                        return GLib.SOURCE_REMOVE;
+                    });
+            }
+            return;
+        }
+
+        this._cancelDwell();
         this._armed = false;
         this._warp(coords.x, coords.y, target);
     }
@@ -343,14 +391,12 @@ export default class CursorWrapExtension extends Extension {
         if (!bounds)
             return null;
 
-        if (this._wrapHorizontal) {
-            if (x < bounds.left + EDGE_ZONE)
-                return this._landInColumn(bounds.right - 1 - LANDING_INSET, y);
-            if (x >= bounds.right - EDGE_ZONE)
-                return this._landInColumn(bounds.left + LANDING_INSET, y);
-        }
+        if (this._wrapLeft && x < bounds.left + EDGE_ZONE)
+            return this._landInColumn(bounds.right - 1 - LANDING_INSET, y, 'left');
+        if (this._wrapRight && x >= bounds.right - EDGE_ZONE)
+            return this._landInColumn(bounds.left + LANDING_INSET, y, 'right');
 
-        if (this._wrapVertical)
+        if (this._wrapTop || this._wrapBottom)
             return this._getVerticalWrapTarget(x, y);
 
         return null;
@@ -371,13 +417,19 @@ export default class CursorWrapExtension extends Extension {
         const isOpen = edgeY => !column.some(m => edgeY >= m.y && edgeY < m.y + m.height);
         const bottomOf = m => m.y + m.height;
 
-        if (y < monitor.y + EDGE_ZONE && isOpen(monitor.y - 1)) {
+        if (this._wrapTop && y < monitor.y + EDGE_ZONE && isOpen(monitor.y - 1)) {
             const lowest = column.reduce((a, b) => bottomOf(b) > bottomOf(a) ? b : a);
-            return insetInto(lowest, x, bottomOf(lowest) - 1 - LANDING_INSET);
+            return {
+                ...insetInto(lowest, x, bottomOf(lowest) - 1 - LANDING_INSET),
+                edge: `top:${monitor.x}:${monitor.y}`,
+            };
         }
-        if (y >= bottomOf(monitor) - EDGE_ZONE && isOpen(bottomOf(monitor))) {
+        if (this._wrapBottom && y >= bottomOf(monitor) - EDGE_ZONE && isOpen(bottomOf(monitor))) {
             const highest = column.reduce((a, b) => b.y < a.y ? b : a);
-            return insetInto(highest, x, highest.y + LANDING_INSET);
+            return {
+                ...insetInto(highest, x, highest.y + LANDING_INSET),
+                edge: `bottom:${monitor.x}:${monitor.y}`,
+            };
         }
         return null;
     }
@@ -386,10 +438,10 @@ export default class CursorWrapExtension extends Extension {
     // than the one the pointer leaves (e.g. an ultrawide next to a 1080p
     // screen). Keep y if a monitor in that column covers it, otherwise move it
     // onto the closest one.
-    _landInColumn(x, y) {
+    _landInColumn(x, y, edge) {
         const monitor = findClosest(
             this._monitors.filter(m => x >= m.x && x < m.x + m.width),
             m => distanceToRange(y, m.y, m.y + m.height - 1));
-        return monitor ? insetInto(monitor, x, y) : null;
+        return monitor ? {...insetInto(monitor, x, y), edge} : null;
     }
 }

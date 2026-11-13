@@ -6,6 +6,11 @@ date-free version headings that match `version-name` in `metadata.json`.
 
 ## [Unreleased]
 
+### Added
+
+- Optional hold-to-wrap with Shift, Alt, or Super, an optional 200 ms edge
+  dwell, and switches to disable wrapping from individual edges.
+
 ## [1.3.1]
 
 ### Fixed

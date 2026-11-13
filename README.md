@@ -42,7 +42,9 @@ Windows, this is the same idea for the GNOME desktop on Linux.
   lands on the closest point of the monitor on that side.
 - No wrapping while a mouse button is held, so dragging a window to a screen
   edge to tile it, drag and drop, and text selection keep working.
-- No polling on Wayland: the extension only does work when the pointer moves.
+- Optional hold-to-wrap, a 200 ms edge delay, and individual edge switches.
+- No polling on Wayland. Pointer motion triggers checks, and the optional
+  delay uses a one-shot timer.
 
 ## Requirements
 
@@ -98,8 +100,16 @@ Open the preferences window:
 gnome-extensions prefs cursor-wrap@friscic.github.io
 ```
 
-There are two switches: **Wrap horizontally** (on by default) and **Wrap
-vertically** (off by default). Changes apply immediately.
+**Wrap horizontally** is on by default and **Wrap vertically** is off.
+All four **Wrap From** switches default to on. Each applies when its axis is
+enabled. For example, turn off **Right edge** to use a dock on the right while
+still allowing the pointer to wrap from the left to the right.
+
+Under **Activation**, turn on **Require a modifier key** and choose **Shift**
+(the default), **Alt**, or **Super** from the **Modifier key** dropdown.
+Turn on **Wait at the edge** to wrap after 200 ms at the same edge. Both
+options default to off. When both are on, keep the selected key held until
+the delay finishes. Moving away cancels the wait. Changes apply immediately.
 
 ## FAQ
 
@@ -148,8 +158,8 @@ No. It is a GNOME Shell extension and only runs in GNOME.
   harder to hit, because overshooting now sends the pointer to the other side.
   Examples: a dock on the left or right edge, scrollbars of maximized windows
   on the far right, and the Activities hot corner (top left; Ubuntu turns hot
-  corners off by default). Moving the dock to the bottom avoids this with
-  horizontal wrapping.
+  corners off by default). Use the [activation and edge settings](#settings)
+  to make those edges easier to reach.
 - Left and right edges only wrap on the outer bounding box of the layout. In
   staggered or L-shaped layouts, a left or right monitor edge that faces empty
   space but is not on the bounding box does not wrap. Top and bottom edges
@@ -254,7 +264,7 @@ and the tested zip are written to `test-logs/`.
 
 | Test file | What it covers |
 | --- | --- |
-| `wrap.test.js` | Core behaviour on two monitors: both directions, landing spots, no bounce back, button held, settings, layout changes, disable and enable (20 cycles, checking nothing is left behind) |
+| `wrap.test.js` | Core wrapping and landing spots, drag protection, layout changes, all four edge switches, Shift/Alt/Super and live key changes, dwell and cancellation, and 20 disable/enable cycles |
 | `layouts.test.js` | Mixed monitor sizes and offsets, and a push into every outer edge with hot corners on, checking that no barrier stops a wrap |
 | `stacked.test.js` | Monitors above each other: laptop below an external monitor (flush and centered), an L shape, and a 2x2 grid, with the primary monitor and its top bar in the middle of the layout |
 | `scaling.test.js` | A 1x monitor next to a HiDPI one at 2x and 1.25x, in logical and physical layout mode |

@@ -18,5 +18,35 @@
         monitor layout.
       </description>
     </key>
+    <key name="wrap-left" type="b">
+      <default>true</default>
+      <summary>Wrap from the left edge</summary>
+    </key>
+    <key name="wrap-right" type="b">
+      <default>true</default>
+      <summary>Wrap from the right edge</summary>
+    </key>
+    <key name="wrap-top" type="b">
+      <default>true</default>
+      <summary>Wrap from the top edge</summary>
+    </key>
+    <key name="wrap-bottom" type="b">
+      <default>true</default>
+      <summary>Wrap from the bottom edge</summary>
+    </key>
+    <key name="require-modifier" type="b">
+      <default>false</default>
+      <summary>Require a modifier key</summary>
+    </key>
+    <key name="enable-dwell" type="b">
+      <default>false</default>
+      <summary>Wait at the edge before wrapping</summary>
+    </key>
+    <key name="wrap-modifier" type="u">
+      <range min="0" max="2"/>
+      <default>0</default>
+      <summary>Modifier key required to wrap</summary>
+      <description>0 for Shift, 1 for Alt, or 2 for Super.</description>
+    </key>
   </schema>
 </schemalist>

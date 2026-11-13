@@ -4,7 +4,10 @@
 // Core wrapping behaviour on two monitors (A 1920x1080, B 1280x1024).
 // Landing spots are 3 px inside the destination monitor (LANDING_INSET).
 
-import {defineTest} from './lib/harness.js';
+import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
+
+import {defineTest, waitFor} from './lib/harness.js';
 
 const A = {width: 1920, height: 1080};
 const B = {width: 1280, height: 1024};
@@ -128,6 +131,113 @@ export const {init, run} = defineTest(async t => {
     await t.moveTo(1800, 5);
     t.push(5000, 0);
     await t.expectPointerStays('single monitor wraps back within the top bar band', 3, 5);
+
+    await t.setSetting('wrap-vertical', true);
+    for (const [edge, dx, dy, x, y, wrapX, wrapY] of [
+        ['left', -5000, 0, 0, 500, 3, 500],
+        ['right', 5000, 0, 1919, 500, 1916, 500],
+        ['top', 0, -5000, 500, 0, 500, 3],
+        ['bottom', 0, 5000, 500, 1079, 500, 1076],
+    ]) {
+        await t.setSetting(`wrap-${edge}`, false);
+        await t.moveTo(500, 500);
+        t.push(dx, dy);
+        await t.expectPointerStays(`disabled ${edge} edge does not wrap`, x, y);
+        await t.moveTo(500, 500);
+        t.push(-dx, -dy);
+        await t.expectPointerStays(`opposite edge of ${edge} still wraps`, wrapX, wrapY);
+        await t.setSetting(`wrap-${edge}`, true);
+    }
+    await t.setSetting('wrap-vertical', false);
+
+    const keyboard = global.stage.get_context().get_backend().get_default_seat()
+        .create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE);
+    const modifiers = [
+        ['Shift', Clutter.KEY_Shift_L, Clutter.ModifierType.SHIFT_MASK],
+        ['Alt', Clutter.KEY_Alt_L, Clutter.ModifierType.MOD1_MASK],
+        ['Super', Clutter.KEY_Super_L,
+            Clutter.ModifierType.MOD4_MASK | Clutter.ModifierType.SUPER_MASK],
+    ];
+    const setModifier = async ([name, key, mask], pressed) => {
+        keyboard.notify_keyval(GLib.get_monotonic_time(), key,
+            pressed ? Clutter.KeyState.PRESSED : Clutter.KeyState.RELEASED);
+        if (!await waitFor(() => Boolean(t.pointer().mods & mask) === pressed))
+            throw new Error(`virtual ${name} key did not ${pressed ? 'press' : 'release'}`);
+    };
+    const withModifier = async (modifier, body) => {
+        try {
+            await setModifier(modifier, true);
+            await body();
+        } finally {
+            await setModifier(modifier, false);
+        }
+    };
+
+    await t.setSetting('require-modifier', true);
+    await t.moveTo(100, 500);
+    t.push(-5000, 0);
+    await t.expectPointerStays('hold-to-wrap blocks wrapping without Shift', 0, 500);
+
+    for (const [index, modifier] of modifiers.entries()) {
+        const [name] = modifier;
+        if (index > 0) {
+            const previous = modifiers[index - 1];
+            const [previousName] = previous;
+            await withModifier(previous, async () => {
+                t.settings.set_uint('wrap-modifier', index);
+                await t.moveTo(100, 500);
+                t.push(-5000, 0);
+                await t.expectPointerStays(`changing to ${name} stops accepting ${previousName}`, 0, 500);
+            });
+        }
+        await t.moveTo(100, 500);
+        await withModifier(modifier, async () => {
+            t.push(-5000, 0);
+            await t.expectPointerStays(`hold-to-wrap allows wrapping with ${name}`, 1916, 500);
+        });
+    }
+    await t.setSetting('require-modifier', false);
+
+    await t.setSetting('enable-dwell', true);
+    await t.moveTo(100, 500);
+    t.push(-5000, 0);
+    await t.expectPointer('dwell allows the pointer to reach the edge', 0, 500);
+    await t.expectPointerStays('dwell wraps a stationary pointer', 1916, 500);
+
+    await t.moveTo(100, 500);
+    t.push(-5000, 0);
+    await t.expectPointer('pointer reaches the edge again', 0, 500);
+    t.push(20, 0);
+    await t.expectPointerStays('leaving the edge cancels dwell', 20, 500);
+
+    t.settings.set_uint('wrap-modifier', 0);
+    await t.setSetting('require-modifier', true);
+    await t.moveTo(100, 500);
+    t.push(-5000, 0);
+    await t.expectPointerStays('dwell does not wrap without the required key', 0, 500);
+
+    await t.moveTo(100, 500);
+    await withModifier(modifiers[0], async () => {
+        t.push(-5000, 0);
+        await t.expectPointer('holding Shift still requires waiting at the edge', 0, 500);
+        await t.expectPointerStays('holding Shift through dwell wraps the pointer', 1916, 500);
+    });
+
+    await t.moveTo(100, 500);
+    await withModifier(modifiers[0], async () => {
+        t.push(-5000, 0);
+        t.check('dwell starts while Shift is held', await waitFor(() => t.instance._dwellId));
+    });
+    await t.expectPointerStays('releasing Shift during dwell prevents the wrap', 0, 500);
+    await t.setSetting('require-modifier', false);
+
+    await t.moveTo(100, 500);
+    t.push(-5000, 0);
+    await t.expectPointer('pointer reaches the edge before disable', 0, 500);
+    await t.setExtensionEnabled(false);
+    await t.expectPointerStays('disabling cancels a pending dwell', 0, 500);
+    await t.setExtensionEnabled(true);
+    await t.setSetting('enable-dwell', false);
 
     // Disable and enable cleanly, as on screen lock and unlock.
     await t.setExtensionEnabled(false);
